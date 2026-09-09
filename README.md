@@ -89,6 +89,28 @@ and per-user folders, and deletes only keys it recorded in Scylla).
    objects are additionally written with `ServerSideEncryption: AES256`. No bucket CORS is
    needed, the browser never talks to S3 directly.
 
+## 2a. Payment (Stripe) for the second report
+
+The first report per person is free. On `POST /leads` the intake looks for an earlier lead with
+the same email (case-insensitive) or phone; if one exists the lead is flagged `payment_required`
+and the response carries `paymentRequired: true`. The landing then adds a "Plata raportului" step
+to the progress modal, calls `POST /leads/{id}/checkout` after the files are uploaded, and sends
+the browser to the hosted Stripe Checkout page (RON, `REPORT_PRICE_RON`, customer email prefilled,
+lead id in `client_reference_id` and metadata). Stripe returns to `multumim.html?plata=ok` or
+`?plata=anulata`; the latter shows a "Plătește raportul" button that opens a fresh session.
+
+`POST /stripe/webhook` (public, signature-verified with `STRIPE_WEBHOOK_SECRET`) marks the lead
+paid on `checkout.session.completed` / `async_payment_succeeded` with `payment_status = paid`, once
+(idempotent on `paid_at`), and pings Slack. The admin page shows plătit / NEPLĂTIT, warns before
+sending the report email to an unpaid lead, and has a "Marchează plătit" override for bank
+transfers or waived fees. Invoices are typed by hand in SmartBill.
+
+Empty `STRIPE_SECRET_KEY` turns the whole thing off (every lead free, checkout answers
+`paymentRequired: false`). The key in `paymentservice-secret` is a TEST key; the webhook endpoint
+registered on 2026-09-09 (`we_1UDomCAXlOtQAYLu93GiJKbk`) is test mode too. Going live means a live
+key, a live webhook endpoint (`stripe webhook_endpoints create` or the dashboard) and its secret.
+Test cards: 4242 4242 4242 4242, any future date, any CVC.
+
 ## 2b. Email (SES)
 
 The report email is sent with the SES v2 API from `SES_FROM` (default `Raport CF <raport@raportcf.ro>`)

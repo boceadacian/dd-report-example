@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { randomBytes } from 'node:crypto';
-import type { Attribution, FileKind, Lead, PropertyType, Report, StoredFile } from './lead';
+import type { Attribution, FileKind, Lead, Payment, PropertyType, Report, StoredFile } from './lead';
 
 export interface LeadListRow {
     id: string;
@@ -13,6 +13,8 @@ export interface LeadListRow {
     reportUploadedAt?: string;
     reportSentAt?: string;
     reportViewedAt?: string;
+    paymentRequired: boolean;
+    paidAt?: string;
 }
 
 interface LeadRow {
@@ -36,6 +38,14 @@ interface LeadRow {
     report_sent_count: number;
     report_viewed_at: Date | null;
     report_view_count: number;
+    payment_required: boolean;
+    previous_lead_id: string | null;
+    stripe_session_id: string | null;
+    stripe_payment_intent: string | null;
+    paid_at: Date | null;
+    paid_amount: number | null;
+    paid_currency: string | null;
+    paid_note: string | null;
 }
 
 interface FileRow {
@@ -58,6 +68,8 @@ interface ListRow {
     report_uploaded_at: Date | null;
     report_sent_at: Date | null;
     report_viewed_at: Date | null;
+    payment_required: boolean;
+    paid_at: Date | null;
 }
 
 /**
@@ -72,12 +84,13 @@ export class LeadRepository {
     async insert(lead: Lead): Promise<void> {
         await this.pool.query(
             `INSERT INTO leads (id, created_at, email, phone, property_type, cadastral_number, fetch_cf,
-                                terms_accepted, ai_consent_accepted, attribution, client)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)`,
+                                terms_accepted, ai_consent_accepted, attribution, client, payment_required, previous_lead_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)`,
             [
                 lead.id, lead.createdAt, lead.email, lead.phone, lead.propertyType, lead.cadastralNumber ?? null,
                 lead.fetchCf, lead.termsAccepted, lead.aiConsentAccepted,
-                JSON.stringify(lead.attribution), JSON.stringify(lead.client)
+                JSON.stringify(lead.attribution), JSON.stringify(lead.client),
+                lead.payment.required, lead.payment.previousLeadId ?? null
             ]
         );
     }
@@ -86,13 +99,14 @@ export class LeadRepository {
     async insertIfAbsent(lead: Lead): Promise<boolean> {
         const result = await this.pool.query(
             `INSERT INTO leads (id, created_at, email, phone, property_type, cadastral_number, fetch_cf,
-                                terms_accepted, ai_consent_accepted, attribution, client)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
+                                terms_accepted, ai_consent_accepted, attribution, client, payment_required, previous_lead_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)
              ON CONFLICT (id) DO NOTHING`,
             [
                 lead.id, lead.createdAt, lead.email, lead.phone, lead.propertyType, lead.cadastralNumber ?? null,
                 lead.fetchCf, lead.termsAccepted, lead.aiConsentAccepted,
-                JSON.stringify(lead.attribution), JSON.stringify(lead.client)
+                JSON.stringify(lead.attribution), JSON.stringify(lead.client),
+                lead.payment?.required ?? false, lead.payment?.previousLeadId ?? null
             ]
         );
         return (result.rowCount ?? 0) > 0;
@@ -145,8 +159,55 @@ export class LeadRepository {
                 size: Number(file.size),
                 uploadedAt: file.uploaded_at.toISOString()
             })),
-            report: this.reportOf(row)
+            report: this.reportOf(row),
+            payment: this.paymentOf(row)
         };
+    }
+
+    private paymentOf(row: LeadRow): Payment {
+        return {
+            required: row.payment_required,
+            previousLeadId: row.previous_lead_id ?? undefined,
+            stripeSessionId: row.stripe_session_id ?? undefined,
+            stripePaymentIntent: row.stripe_payment_intent ?? undefined,
+            paidAt: row.paid_at?.toISOString(),
+            paidAmount: row.paid_amount ?? undefined,
+            paidCurrency: row.paid_currency ?? undefined,
+            paidNote: row.paid_note ?? undefined
+        };
+    }
+
+    /** The most recent earlier lead by the same email (case-insensitive) or phone; undefined for a first-time customer. */
+    async findPreviousLeadId(email: string, phone: string): Promise<string | undefined> {
+        const result = await this.pool.query<{ id: string }>(
+            `SELECT id FROM leads WHERE lower(email) = lower($1) OR phone = $2 ORDER BY created_at DESC LIMIT 1`,
+            [email, phone]
+        );
+        return result.rows[0]?.id;
+    }
+
+    async saveCheckoutSession(leadId: string, sessionId: string): Promise<void> {
+        await this.pool.query('UPDATE leads SET stripe_session_id = $2 WHERE id = $1', [leadId, sessionId]);
+    }
+
+    /** Records a Stripe payment once; returns false when the lead is unknown or already paid. */
+    async markPaid(leadId: string, sessionId: string, paymentIntent: string | undefined, amount: number | undefined, currency: string | undefined): Promise<boolean> {
+        const result = await this.pool.query(
+            `UPDATE leads
+             SET paid_at = now(), stripe_session_id = $2, stripe_payment_intent = $3, paid_amount = $4, paid_currency = $5
+             WHERE id = $1 AND paid_at IS NULL`,
+            [leadId, sessionId, paymentIntent ?? null, amount ?? null, currency ?? null]
+        );
+        return (result.rowCount ?? 0) > 0;
+    }
+
+    /** Admin override: bank transfer received, or the fee waived. */
+    async markPaidManually(leadId: string, note: string): Promise<boolean> {
+        const result = await this.pool.query(
+            `UPDATE leads SET paid_at = now(), paid_note = $2 WHERE id = $1 AND paid_at IS NULL`,
+            [leadId, note]
+        );
+        return (result.rowCount ?? 0) > 0;
     }
 
     private reportOf(row: LeadRow): Report | undefined {
@@ -227,7 +288,8 @@ export class LeadRepository {
                     (SELECT count(*) FROM lead_files f WHERE f.lead_id = l.id) AS file_count,
                     l.attribution->>'utmSource' AS utm_source,
                     l.attribution->>'utmCampaign' AS utm_campaign,
-                    l.report_uploaded_at, l.report_sent_at, l.report_viewed_at
+                    l.report_uploaded_at, l.report_sent_at, l.report_viewed_at,
+                    l.payment_required, l.paid_at
              FROM leads l
              ORDER BY l.created_at DESC
              LIMIT $1`,
@@ -243,17 +305,10 @@ export class LeadRepository {
             utmCampaign: row.utm_campaign ?? undefined,
             reportUploadedAt: row.report_uploaded_at?.toISOString(),
             reportSentAt: row.report_sent_at?.toISOString(),
-            reportViewedAt: row.report_viewed_at?.toISOString()
+            reportViewedAt: row.report_viewed_at?.toISOString(),
+            paymentRequired: row.payment_required,
+            paidAt: row.paid_at?.toISOString()
         }));
     }
 
-    /** Earlier leads from the same person, by normalized email or phone. Ready for the free-then-paid gate. */
-    async countPrevious(email: string, phone: string, excludingLeadId?: string): Promise<number> {
-        const result = await this.pool.query<{ count: string }>(
-            `SELECT count(*) AS count FROM leads
-             WHERE (lower(email) = lower($1) OR phone = $2) AND id <> coalesce($3, '')`,
-            [email, phone, excludingLeadId ?? null]
-        );
-        return Number(result.rows[0]?.count ?? 0);
-    }
 }

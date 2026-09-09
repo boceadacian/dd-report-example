@@ -354,6 +354,40 @@
         });
     }
 
+    // "Cum obții CF-ul?" on the request page opens the landing's CF guide in a popup, so the form is not lost.
+    function initCfGuide() {
+        var link = document.getElementById('cf-guide-link');
+        var modal = document.getElementById('cf-guide-modal');
+        if (link == null || modal == null) {
+            return;
+        }
+        var close = document.getElementById('cf-guide-close');
+        function hide() {
+            modal.hidden = true;
+        }
+        link.addEventListener('click', function (event) {
+            event.preventDefault();
+            modal.hidden = false;
+            track('cf_guide_opened', {});
+            if (close != null) {
+                close.focus();
+            }
+        });
+        if (close != null) {
+            close.addEventListener('click', hide);
+        }
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                hide();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !modal.hidden) {
+                hide();
+            }
+        });
+    }
+
     // ---- Request form: contact + CF documents on one screen ----
     // Same rules as the app: DueDiligenceSubmitConstants.CADASTRAL_NR_PATTERN, EmailValidationStrategy,
     // PhoneNumberValidationStrategy for +40 (10 digits starting 07, or 9 digits starting 7).
@@ -665,7 +699,7 @@
     }
 
     // ---- Progress modal: one row per request, run in sequence, retry per row ----
-    var progress = { leadId: null, request: null, filesBody: null };
+    var progress = { leadId: null, request: null, filesBody: null, paymentRequired: false, priceRon: 150 };
 
     function setStep(step, status, message) {
         var row = document.querySelector('[data-step="' + step + '"]');
@@ -684,8 +718,10 @@
     function openProgress(withFiles) {
         var modal = document.getElementById('progress-modal');
         document.querySelector('[data-step="files"]').hidden = !withFiles;
+        document.querySelector('[data-step="payment"]').hidden = true;
         setStep('lead', 'idle');
         setStep('files', 'idle');
+        setStep('payment', 'idle');
         setModalClosable(false);
         modal.hidden = false;
     }
@@ -715,8 +751,16 @@
                 throw new Error('rejected');
             }
             progress.leadId = result.body.id;
+            progress.paymentRequired = result.body.paymentRequired === true;
+            progress.priceRon = result.body.priceRon || progress.priceRon;
             writeStore(sessionStorage, LEAD_KEY, progress.leadId);
             setStep('lead', 'success');
+            if (progress.paymentRequired) {
+                // Second report for this email or phone: the modal grows a payment step before the redirect.
+                document.querySelector('[data-step="payment"] .dd-progress-label').textContent = 'Plata raportului (' + progress.priceRon + ' RON)';
+                document.querySelector('[data-step="payment"]').hidden = false;
+                track('payment_required', { price_ron: progress.priceRon });
+            }
             track('lead_submitted', { property_type: progress.request.propertyType, fetch_cf: progress.request.cadastralNumber != null });
             if (progress.filesBody != null) {
                 runFilesStep();
@@ -762,10 +806,52 @@
     }
 
     function finishSequence() {
+        if (progress.paymentRequired) {
+            runPaymentStep();
+            return;
+        }
         setModalClosable(true);
         window.setTimeout(function () {
             window.location.href = 'multumim.html?id=' + encodeURIComponent(progress.leadId);
         }, 700);
+    }
+
+    // Asks the API for a Stripe Checkout session and sends the browser there; Stripe returns to multumim.html.
+    function startCheckout(leadId) {
+        return fetch(API_BASE + '/leads/' + encodeURIComponent(leadId) + '/checkout', { method: 'POST' })
+            .then(function (response) {
+                return response.json().then(function (body) {
+                    return { ok: response.ok, body: body };
+                });
+            })
+            .then(function (result) {
+                if (!result.ok) {
+                    throw new Error('rejected');
+                }
+                if (result.body.paymentRequired !== true || result.body.paid === true) {
+                    return false;
+                }
+                if (result.body.url == null) {
+                    throw new Error('no url');
+                }
+                track('checkout_started', { price_ron: progress.priceRon });
+                window.location.href = result.body.url;
+                return true;
+            });
+    }
+
+    function runPaymentStep() {
+        setStep('payment', 'pending', 'Te ducem la plată...');
+        startCheckout(progress.leadId).then(function (redirected) {
+            if (!redirected) {
+                setStep('payment', 'success', 'Nu este necesară');
+                progress.paymentRequired = false;
+                finishSequence();
+            }
+        }).catch(function () {
+            setStep('payment', 'error', 'Nu am putut deschide plata. Reîncearcă sau plătește din pagina următoare.');
+            setModalClosable(true);
+        });
     }
 
     function initRequestForm() {
@@ -900,6 +986,8 @@
                 setModalClosable(false);
                 if (step === 'lead' || progress.leadId == null) {
                     runLeadStep();
+                } else if (step === 'payment') {
+                    runPaymentStep();
                 } else {
                     runFilesStep();
                 }
@@ -933,10 +1021,39 @@
         if (document.body.getAttribute('data-page') !== 'thanks') {
             return;
         }
-        var leadId = new URLSearchParams(window.location.search).get('id') || readStore(sessionStorage, LEAD_KEY) || '';
+        var params = new URLSearchParams(window.location.search);
+        var leadId = params.get('id') || readStore(sessionStorage, LEAD_KEY) || '';
         var target = document.getElementById('lead-id');
         if (target != null && leadId !== '') {
             target.textContent = leadId;
+        }
+        // Back from Stripe: ?plata=ok after a payment, ?plata=anulata when the customer left Checkout.
+        var payment = params.get('plata');
+        if (payment === 'ok') {
+            document.getElementById('payment-ok').hidden = false;
+            track('payment_completed', {});
+        } else if (payment === 'anulata' && leadId !== '') {
+            var pending = document.getElementById('payment-pending');
+            pending.hidden = false;
+            track('payment_cancelled', {});
+            var payButton = document.getElementById('pay-now');
+            if (payButton != null) {
+                payButton.addEventListener('click', function () {
+                    payButton.disabled = true;
+                    document.getElementById('payment-error').hidden = true;
+                    startCheckout(leadId).then(function (redirected) {
+                        if (!redirected) {
+                            pending.hidden = true;
+                            document.getElementById('payment-ok').hidden = false;
+                        }
+                    }).catch(function () {
+                        payButton.disabled = false;
+                        var error = document.getElementById('payment-error');
+                        error.textContent = 'Nu am putut deschide plata. Reîncearcă în câteva momente.';
+                        error.hidden = false;
+                    });
+                });
+            }
         }
         var firedKey = 'dd_conv_' + leadId;
         if (leadId !== '' && readStore(sessionStorage, firedKey) == null) {
@@ -1018,6 +1135,7 @@
     initLandingActions();
     initAccordions();
     initGuideToggle();
+    initCfGuide();
     initConsent();
     initRequestForm();
     initThanks();

@@ -69,11 +69,12 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminRouteDeps):
 <td>${escapeHtml(lead.email)}</td>
 <td>${lead.fileCount}</td>
 <td>${escapeHtml(lead.utmSource)} / ${escapeHtml(lead.utmCampaign)}</td>
+<td>${paymentStatus(lead.paymentRequired, lead.paidAt)}</td>
 <td>${reportStatus(lead.reportUploadedAt, lead.reportSentAt, lead.reportViewedAt)}</td>
 </tr>`)
             .join('');
         const body = `<h1>Leads (${listed.length})</h1>
-<table><thead><tr><th>Id</th><th>Creat</th><th>Tip</th><th>Email</th><th>Fișiere</th><th>Sursă</th><th>Raport</th></tr></thead>
+<table><thead><tr><th>Id</th><th>Creat</th><th>Tip</th><th>Email</th><th>Fișiere</th><th>Sursă</th><th>Plată</th><th>Raport</th></tr></thead>
 <tbody>${rows}</tbody></table>`;
         return reply.type('text/html; charset=utf-8').send(page('Leads', body));
     });
@@ -113,6 +114,8 @@ ${flashHtml}
 <h2>Fișiere (${lead.files.length})</h2>
 ${lead.files.length === 0 ? '<p>Niciun fișier.</p>' : `<ul>${fileRows.join('')}</ul>`}
 <p>Linkurile expiră; reîncarcă pagina pentru unele noi.</p>
+<h2>Plată</h2>
+${paymentSection(lead)}
 <h2>Raport</h2>
 ${await reportSection(lead)}
 <h2>Atribuire</h2><pre>${escapeHtml(JSON.stringify(lead.attribution, null, 2))}</pre>
@@ -155,6 +158,20 @@ ${await reportSection(lead)}
         return redirectToLead(reply, leadId, lead.report != null ? 'Raport înlocuit. Linkul trimis anterior rămâne valabil.' : 'Raport încărcat. Trimite emailul când e gata.');
     });
 
+    app.post<{ Params: { id: string }; Body: { note?: string } }>('/admin/leads/:id/paid', async (request, reply) => {
+        if (rejectCrossSite(request, reply)) {
+            return reply;
+        }
+        const leadId = request.params.id;
+        if (!isValidLeadId(leadId)) {
+            return reply.code(400).type('text/html; charset=utf-8').send(page('Invalid', '<p>Invalid lead id.</p>'));
+        }
+        const note = (typeof request.body?.note === 'string' ? request.body.note : '').trim().slice(0, 200) || 'marcat manual';
+        const marked = await leads.markPaidManually(leadId, note);
+        request.log.info({ leadId, marked }, 'lead marked paid by admin');
+        return redirectToLead(reply, leadId, marked ? 'Marcat ca plătit.' : 'Eroare: lead necunoscut sau deja plătit.');
+    });
+
     app.post<{ Params: { id: string } }>('/admin/leads/:id/report/send', async (request, reply) => {
         if (rejectCrossSite(request, reply)) {
             return reply;
@@ -178,6 +195,24 @@ ${await reportSection(lead)}
         return redirectToLead(reply, leadId, 'Email trimis.');
     });
 
+    function paymentSection(lead: Lead): string {
+        if (!lead.payment.required && lead.payment.paidAt == null) {
+            return '<p>Primul raport al acestui client: gratuit.</p>';
+        }
+        const previous = lead.payment.previousLeadId == null ? '' : ` (a mai cerut: <a href="/admin/leads/${escapeHtml(lead.payment.previousLeadId)}">${escapeHtml(lead.payment.previousLeadId)}</a>)`;
+        if (lead.payment.paidAt != null) {
+            const how = lead.payment.paidNote != null
+                ? `manual: ${escapeHtml(lead.payment.paidNote)}`
+                : `Stripe ${escapeHtml(lead.payment.stripePaymentIntent ?? lead.payment.stripeSessionId ?? '')}, ${lead.payment.paidAmount != null ? (lead.payment.paidAmount / 100).toFixed(2) : '?'} ${escapeHtml((lead.payment.paidCurrency ?? 'ron').toUpperCase())}`;
+            return `<p class="flash ok">Plătit ${escapeHtml(short(lead.payment.paidAt))} (${how})${previous}. Factura se emite manual în SmartBill.</p>`;
+        }
+        return `<p class="flash err">NEPLĂTIT${previous}. Client recurent, raportul se lucrează după plată.${lead.payment.stripeSessionId != null ? ' Sesiune Stripe deschisă: ' + escapeHtml(lead.payment.stripeSessionId) : ' Nu a ajuns la plată.'}</p>
+<form class="inline" method="post" action="/admin/leads/${escapeHtml(lead.id)}/paid" onsubmit="return confirm('Marchez ca plătit fără Stripe?')">
+<input type="text" name="note" placeholder="ex. transfer bancar / gratuit" maxlength="200">
+<button type="submit">Marchează plătit</button>
+</form>`;
+    }
+
     async function reportSection(lead: Lead): Promise<string> {
         const uploadForm = `<form method="post" action="/admin/leads/${escapeHtml(lead.id)}/report" enctype="multipart/form-data">
 <input type="file" name="report" accept="application/pdf" required>
@@ -188,7 +223,8 @@ ${await reportSection(lead)}
         }
         const adminUrl = await files.presignedGetUrl(lead.report.key);
         const customerUrl = mailer.reportUrl(lead);
-        const sendForm = `<form class="inline" method="post" action="/admin/leads/${escapeHtml(lead.id)}/report/send" onsubmit="return confirm('Trimit emailul către ${escapeHtml(lead.email)}?')">
+        const unpaid = lead.payment.required && lead.payment.paidAt == null;
+        const sendForm = `<form class="inline" method="post" action="/admin/leads/${escapeHtml(lead.id)}/report/send" onsubmit="return confirm('${unpaid ? 'ATENȚIE: lead NEPLĂTIT. ' : ''}Trimit emailul către ${escapeHtml(lead.email)}?')">
 <button type="submit">${lead.report.sentCount === 0 ? 'Trimite emailul cu linkul' : 'Retrimite emailul'}</button>
 </form>`;
         return `<table>
@@ -199,6 +235,16 @@ ${await reportSection(lead)}
 </table>
 <p>${uploadForm}</p>`;
     }
+}
+
+function paymentStatus(required: boolean, paidAt: string | undefined): string {
+    if (paidAt != null) {
+        return `plătit ${escapeHtml(short(paidAt))}`;
+    }
+    if (!required) {
+        return 'gratuit';
+    }
+    return '<b style="color:#8a1c12">neplătit</b>';
 }
 
 function reportStatus(uploadedAt: string | undefined, sentAt: string | undefined, viewedAt: string | undefined): string {

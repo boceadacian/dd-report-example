@@ -77,6 +77,9 @@ services:
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_PORT:-19190}
       SLACK_WEBHOOK_URL: http://slack-mock:8080/slack-webhook
+      # Payments off locally unless you export STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET (use `stripe listen`).
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       LOG_LEVEL: debug
 
   caddy:

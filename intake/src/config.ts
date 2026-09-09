@@ -28,6 +28,13 @@ export interface AppConfig {
     sesFrom: string | undefined;
     sesReplyTo: string | undefined;
     sesRegion: string;
+    /** Empty disables payments: every lead is free. */
+    stripeSecretKey: string | undefined;
+    stripeWebhookSecret: string | undefined;
+    reportPriceRon: number;
+    paymentEnabled: boolean;
+    /** Stripe tax rate (txr_...) applied to the report line; the price is VAT-inclusive. Empty = no tax line. */
+    stripeTaxRateId: string | undefined;
     maxFileBytes: number;
     maxFilesPerLead: number;
     maxFilesPerRequest: number;
@@ -90,6 +97,11 @@ export function loadConfig(): AppConfig {
         sesFrom: process.env.SES_FROM?.trim() || undefined,
         sesReplyTo: process.env.SES_REPLY_TO?.trim() || undefined,
         sesRegion: optional('SES_REGION', optional('AWS_REGION', 'eu-central-1')),
+        stripeSecretKey: process.env.STRIPE_SECRET_KEY?.trim() || undefined,
+        stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() || undefined,
+        reportPriceRon: Number(optional('REPORT_PRICE_RON', '150')),
+        paymentEnabled: optional('PAYMENT_ENABLED', 'true') === 'true',
+        stripeTaxRateId: process.env.STRIPE_TAX_RATE_ID?.trim() || undefined,
         maxFileBytes: Number(optional('MAX_FILE_BYTES', String(10 * 1024 * 1024))),
         maxFilesPerLead: Number(optional('MAX_FILES_PER_LEAD', '28')),
         maxFilesPerRequest: Number(optional('MAX_FILES_PER_REQUEST', '28'))

@@ -4,6 +4,7 @@ import { sanitizeFileName, sniffFileType } from '../files';
 import { FILE_KIND_RULES, fileKindForField, isValidLeadId, newLeadId, validateLeadInput, type FileKind, type Lead, type StoredFile } from '../lead';
 import type { FileStorage } from '../file-storage';
 import type { LeadRepository } from '../lead-repository';
+import type { PaymentGateway } from '../payments';
 import type { SlackNotifier } from '../slack';
 
 interface LeadRouteDeps {
@@ -11,6 +12,7 @@ interface LeadRouteDeps {
     leads: LeadRepository;
     files: FileStorage;
     slack: SlackNotifier;
+    payments: PaymentGateway;
 }
 
 interface RejectedFile {
@@ -19,7 +21,7 @@ interface RejectedFile {
 }
 
 export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): void {
-    const { config, leads, files, slack } = deps;
+    const { config, leads, files, slack, payments } = deps;
 
     app.post('/leads', {
         config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
@@ -33,6 +35,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
             return reply.code(400).send({ errors: failures });
         }
 
+        // The first report is free; a person who already asked once (same email or phone) pays for the next.
+        const previousLeadId = payments.enabled() ? await leads.findPreviousLeadId(input.email, input.phone) : undefined;
         const lead: Lead = {
             id: newLeadId(),
             createdAt: new Date().toISOString(),
@@ -45,13 +49,40 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
                 userAgent: request.headers['user-agent']?.slice(0, 300),
                 acceptLanguage: request.headers['accept-language']?.slice(0, 100)
             },
-            files: []
+            files: [],
+            payment: { required: previousLeadId != null, previousLeadId }
         };
 
         await leads.insert(lead);
-        request.log.info({ leadId: lead.id, propertyType: lead.propertyType, fetchCf: lead.fetchCf }, 'lead saved');
+        request.log.info({ leadId: lead.id, propertyType: lead.propertyType, fetchCf: lead.fetchCf, paymentRequired: lead.payment.required }, 'lead saved');
         await slack.leadCreated(lead);
-        return reply.code(201).send({ id: lead.id });
+        return reply.code(201).send({ id: lead.id, paymentRequired: lead.payment.required, priceRon: config.reportPriceRon });
+    });
+
+    /**
+     * Hosted Stripe Checkout for a lead that owes the fee. Called by the landing right after the
+     * files are uploaded, and again from the thank-you page when the customer cancelled and comes back.
+     */
+    app.post<{ Params: { id: string } }>('/leads/:id/checkout', {
+        config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
+    }, async (request, reply) => {
+        const leadId = request.params.id;
+        if (!isValidLeadId(leadId)) {
+            return reply.code(400).send({ errors: [{ field: 'id', reason: 'invalid' }] });
+        }
+        const lead = await leads.find(leadId);
+        if (lead == null) {
+            return reply.code(404).send({ errors: [{ field: 'id', reason: 'unknown lead' }] });
+        }
+        if (!lead.payment.required || !payments.enabled()) {
+            return reply.send({ id: leadId, paymentRequired: false });
+        }
+        if (lead.payment.paidAt != null) {
+            return reply.send({ id: leadId, paymentRequired: true, paid: true });
+        }
+        const session = await payments.createCheckoutSession(lead);
+        await leads.saveCheckoutSession(leadId, session.id);
+        return reply.send({ id: leadId, paymentRequired: true, paid: false, url: session.url });
     });
 
     app.post<{ Params: { id: string } }>('/leads/:id/files', {

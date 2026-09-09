@@ -459,6 +459,16 @@
 .dd-modal-actions { padding: 0 var(--spacing-24) var(--spacing-24); display: flex; justify-content: flex-end; }
 .dd-modal-actions app-button { display: block; }
 
+/* CF guide popup on the request page: the landing's "Ai nevoie de Cartea Funciară" section, in place. */
+.dd-guide-modal .dd-modal-body { max-height: min(70vh, 640px); overflow-y: auto; }
+.dd-guide-intro { margin: 0; color: var(--text-weak); font-size: var(--small-text); line-height: 1.5; }
+.dd-guide-steps { display: flex; flex-direction: column; gap: var(--spacing-8); }
+.dd-guide-steps[hidden] { display: none !important; }
+.dd-guide-steps-title { color: var(--text-strong); font-weight: var(--font-weight-strong); font-size: var(--small-text); }
+.dd-guide-steps ol { margin: 0; padding-left: var(--spacing-24); display: flex; flex-direction: column; gap: var(--spacing-8); color: var(--text-strong); font-size: var(--small-text); line-height: 1.5; }
+.dd-guide-steps ul { margin: var(--spacing-4) 0 0; padding-left: var(--spacing-16); color: var(--text-weak); }
+.dd-guide-steps a { color: var(--text-brand); word-break: break-all; }
+
 @keyframes ddSpin { to { transform: rotate(360deg); } }
 
 @media (max-width: 480px) {
@@ -573,3 +583,10 @@ img.right-image { object-fit: cover !important; }
     .dd-report-frame { display: none !important; }
     .dd-report-actions .button { width: 100%; }
 }
+
+/* Thank-you page: payment states after Stripe Checkout. */
+#payment-pending { padding-bottom: var(--spacing-16); }
+#payment-pending .dd-actions { margin: var(--spacing-16) 0; }
+.dd-payment-ok { color: var(--text-brand) !important; font-weight: var(--font-weight-strong); }
+.dd-payment-error { color: #8a1c12 !important; font-size: 0.9rem; }
+#payment-ok[hidden], #payment-pending[hidden], #payment-error[hidden] { display: none !important; }

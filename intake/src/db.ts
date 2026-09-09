@@ -42,7 +42,18 @@ const SCHEMA_STATEMENTS: string[] = [
         size          bigint NOT NULL,
         uploaded_at   timestamptz NOT NULL
     )`,
-    `CREATE INDEX IF NOT EXISTS lead_files_lead_id_idx ON lead_files (lead_id, id)`
+    `CREATE INDEX IF NOT EXISTS lead_files_lead_id_idx ON lead_files (lead_id, id)`,
+    // Payment for the second and later report of the same person (Stripe Checkout + webhook).
+    `ALTER TABLE leads
+        ADD COLUMN IF NOT EXISTS payment_required      boolean NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS previous_lead_id      text,
+        ADD COLUMN IF NOT EXISTS stripe_session_id     text,
+        ADD COLUMN IF NOT EXISTS stripe_payment_intent text,
+        ADD COLUMN IF NOT EXISTS paid_at               timestamptz,
+        ADD COLUMN IF NOT EXISTS paid_amount           integer,
+        ADD COLUMN IF NOT EXISTS paid_currency         text,
+        ADD COLUMN IF NOT EXISTS paid_note             text`,
+    `CREATE INDEX IF NOT EXISTS leads_stripe_session_idx ON leads (stripe_session_id)`
 ];
 
 export function createPool(config: AppConfig): Pool {

@@ -2,6 +2,12 @@
 <div class="dd-card dd-thanks">
     <h1 class="dd-title">Am primit cererea ta</h1>
     <p>Îți scriem pe emailul lăsat în cel mult o zi lucrătoare. Dacă ne lipsește ceva, de exemplu extrasul de carte funciară, îți spunem exact ce avem nevoie și cum îl obții.</p>
+    <p class="dd-payment-ok" id="payment-ok" hidden>Plata a fost înregistrată, mulțumim. Raportul intră la lucru.</p>
+    <div id="payment-pending" hidden>
+        <p><strong>Cererea este salvată, dar plata nu a fost finalizată.</strong> Ai mai cerut un raport de la noi, așa că acesta costă <span id="payment-price">150</span> RON. Îl lucrăm după plată.</p>
+        <div class="dd-actions">{{BTN:primary:pay-now:button:Plătește raportul}}</div>
+        <p class="dd-payment-error" id="payment-error" hidden></p>
+    </div>
     <p>Numărul cererii: <span class="dd-id" id="lead-id">-</span>. Păstrează-l dacă ne scrii între timp la <a href="mailto:contact@knoha.ro">contact@knoha.ro</a>.</p>
     <div class="dd-actions">{{BTN:secondary:back-home:button:Înapoi la pagina raportului}}</div>
 </div>

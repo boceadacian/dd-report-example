@@ -18,6 +18,7 @@ export class SlackNotifier {
         const lines = [
             `:house: *Lead nou* \`${lead.id}\``,
             `Tip: *${lead.propertyType}*, ${lead.fetchCf ? 'a lăsat numărul cadastral, de obținut CF-ul' : 'urmează documentele'}`,
+            lead.payment.required ? `:credit_card: *Client recurent* (după \`${lead.payment.previousLeadId}\`), plata este necesară înainte de raport` : 'Primul raport, gratuit',
             `Sursă: ${lead.attribution.utmSource ?? 'direct'} / ${lead.attribution.utmMedium ?? '-'} / ${lead.attribution.utmCampaign ?? '-'}`,
             `${this.config.publicBaseUrl}/admin/leads/${lead.id}`
         ];
@@ -31,6 +32,12 @@ export class SlackNotifier {
         }
         const summary = Object.entries(counts).map(([kind, count]) => `${kind}: ${count}`).join(', ');
         const text = `:paperclip: Lead \`${lead.id}\`: ${added} fișier(e) noi (${summary}). ${this.config.publicBaseUrl}/admin/leads/${lead.id}`;
+        await this.post(text, lead.id);
+    }
+
+    async leadPaid(lead: Lead): Promise<void> {
+        const amount = lead.payment.paidAmount != null ? `${(lead.payment.paidAmount / 100).toFixed(2)} ${(lead.payment.paidCurrency ?? 'ron').toUpperCase()}` : 'sumă necunoscută';
+        const text = `:moneybag: Lead \`${lead.id}\`: *plătit* ${amount}. Se poate lucra raportul. ${this.config.publicBaseUrl}/admin/leads/${lead.id}`;
         await this.post(text, lead.id);
     }
 

@@ -40,7 +40,7 @@
                 <input type="text" id="cadastralNumber" name="cadastralNumber" placeholder="XXXXXX-CX-UX" maxlength="20" autocapitalize="characters" autocomplete="off">
                 <div class="dd-error">Format invalid. Se așteaptă: XXXXXX-CX-UX</div>
             </div>
-            <a class="dd-guide-link" href="./#ghid-cf" target="_blank" rel="noopener">Cum obții CF-ul?</a>
+            <a class="dd-guide-link" id="cf-guide-link" href="./#ghid-cf" target="_blank" rel="noopener">Cum obții CF-ul?</a>
         </div>
 
         <div id="upload-blocks">
@@ -166,6 +166,56 @@
 <p class="dd-disclaimer">Acest raport are scop exclusiv informativ și nu constituie consultanță juridică, financiară sau tehnică. Recomandăm consultarea unui notar, avocat sau expert tehnic înainte de orice decizie de cumpărare.</p>
 </main>
 
+<!-- CF guide popup: the "Ai nevoie de Cartea Funciară" section of the landing, opened in place instead of leaving the form. -->
+<div class="dd-modal dd-guide-modal" id="cf-guide-modal" hidden role="dialog" aria-modal="true" aria-labelledby="cf-guide-title">
+    <div class="dd-modal-card">
+        <div class="dd-modal-head"><span id="cf-guide-title">Cum obții Cartea Funciară (CF)?</span></div>
+        <div class="dd-modal-body">
+            <p class="dd-guide-intro">Poți obține extrasul CF singur, în câteva minute, de pe portalul ANCPI. Dacă preferi, bifează opțiunea din formular și ne ocupăm noi.</p>
+            <app-segmented-controls _ngcontent-ng-c3962580591="" class="segmented-controls" _nghost-ng-c3214368954=""><div _ngcontent-ng-c3214368954="" class="segment-inner-container input-error-container"><div _ngcontent-ng-c3214368954="" class="segmented-input-container"><div _ngcontent-ng-c3214368954="" class="segment-container full-width"><div _ngcontent-ng-c3214368954="" class="segment-inner-container"><app-segmented-control _ngcontent-ng-c3214368954="" _nghost-ng-c4009087826=""><div data-guide="without" _ngcontent-ng-c4009087826="" role="button" tabindex="0" class="item-container user-select-none item-container-small item-container-selected"><div _ngcontent-ng-c4009087826="" class="item-inner-container item-inner-container-small"><div _ngcontent-ng-c4009087826="" class="item-text-container padding"><span _ngcontent-ng-c4009087826="" class="item-text item-text-small item-text-selected letter-spacing">Nu știu numărul cadastral</span></div></div></div></app-segmented-control><app-segmented-control _ngcontent-ng-c3214368954="" _nghost-ng-c4009087826=""><div data-guide="with" _ngcontent-ng-c4009087826="" role="button" tabindex="0" class="item-container user-select-none item-container-small"><div _ngcontent-ng-c4009087826="" class="item-inner-container item-inner-container-small"><div _ngcontent-ng-c4009087826="" class="item-text-container padding"><span _ngcontent-ng-c4009087826="" class="item-text item-text-small item-text-unselected letter-spacing">Știu numărul cadastral</span></div></div></div></app-segmented-control></div></div></div></div></app-segmented-controls>
+            <div class="dd-guide-steps" data-guide-list="without">
+                <span class="dd-guide-steps-title">Pașii pentru a o obține singur:</span>
+                <ol>
+                <li>Mergi la <a href="https://geoportal.ancpi.ro/imobile_lookup.html" target="_blank" rel="noopener">geoportal.ancpi.ro/imobile_lookup.html</a></li>
+                <li>Caută adresa în bara de căutare din dreapta sus</li>
+                <li>Selectează proprietatea</li>
+                <li>Copiază valoarea din câmpul "Număr clădire" (de exemplu 262151-C1)</li>
+                <li>Apasă pe butonul "Extras de carte funciară - ePlată"</li>
+                <li>Apasă pe "Adaugă în coș"</li>
+                <li>Apasă pe "Cumpără" în secțiunea din dreapta sus</li>
+                <li>Apasă pe "Configurează"</li>
+                <li>Introdu numărul cadastral
+                    <ul>
+                        <li>Numărul cadastral al apartamentului are formatul XXXXXX-CX-UXX (XXXXXX-CX este numărul copiat mai sus)</li>
+                        <li>U este numărul unității (de obicei numărul apartamentului, dar poate diferi)</li>
+                        <li>Numărul cadastral se găsește și în contractul de vânzare-cumpărare sau la OCPI</li>
+                    </ul>
+                </li>
+                <li>Apasă pe butonul "Cumpără"</li>
+            </ol>
+            </div>
+            <div class="dd-guide-steps" data-guide-list="with" hidden>
+                <span class="dd-guide-steps-title">Pașii pentru a o obține singur:</span>
+                <ol>
+                <li>Mergi la <a href="https://epay.ancpi.ro/epay/SelectProd.action?prodId=1420" target="_blank" rel="noopener">epay.ancpi.ro (Extras de carte funciară)</a></li>
+                <li>Apasă pe "Adaugă în coș"</li>
+                <li>Apasă pe "Cumpără" în secțiunea din dreapta sus</li>
+                <li>Apasă pe "Configurează"</li>
+                <li>Introdu numărul cadastral
+                    <ul>
+                        <li>Numărul cadastral al apartamentului are formatul XXXXXX-CX-UXX (XXXXXX-CX este numărul copiat mai sus)</li>
+                        <li>U este numărul unității (de obicei numărul apartamentului, dar poate diferi)</li>
+                        <li>Numărul cadastral se găsește și în contractul de vânzare-cumpărare sau la OCPI</li>
+                    </ul>
+                </li>
+                <li>Apasă pe butonul "Cumpără"</li>
+            </ol>
+            </div>
+        </div>
+        <div class="dd-modal-actions">{{BTN:secondary:cf-guide-close:button:Închide}}</div>
+    </div>
+</div>
+
 <!-- Progress modal: one row per request, like the request-progress modal in the app. -->
 <div class="dd-modal" id="progress-modal" hidden role="dialog" aria-modal="true" aria-labelledby="progress-title">
     <div class="dd-modal-card">
@@ -181,6 +231,14 @@
             </div>
             <div class="dd-progress-row" data-step="files" hidden>
                 <span class="dd-progress-label">Încărcăm documentele</span>
+                <div class="dd-progress-status" data-status="idle">
+                    <a class="dd-progress-retry" href="#" hidden><img alt="" width="16" height="16" src="https://static.knoha.eu/static/svg/undo_red.svg">Reîncearcă</a>
+                    <span class="dd-progress-text"></span>
+                    <img class="dd-progress-icon" alt="" width="24" height="24" src="">
+                </div>
+            </div>
+            <div class="dd-progress-row" data-step="payment" hidden>
+                <span class="dd-progress-label">Plata raportului</span>
                 <div class="dd-progress-status" data-status="idle">
                     <a class="dd-progress-retry" href="#" hidden><img alt="" width="16" height="16" src="https://static.knoha.eu/static/svg/undo_red.svg">Reîncearcă</a>
                     <span class="dd-progress-text"></span>

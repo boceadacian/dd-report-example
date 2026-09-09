@@ -66,6 +66,21 @@ export interface Report {
     viewCount: number;
 }
 
+/** Payment state; only meaningful when paymentRequired is true (a repeat customer). */
+export interface Payment {
+    required: boolean;
+    /** The earlier lead that made this one a repeat. */
+    previousLeadId?: string;
+    stripeSessionId?: string;
+    stripePaymentIntent?: string;
+    paidAt?: string;
+    /** Minor units (bani). */
+    paidAmount?: number;
+    paidCurrency?: string;
+    /** Set when marked paid by hand (bank transfer, waived). */
+    paidNote?: string;
+}
+
 export interface Lead {
     id: string;
     createdAt: string;
@@ -85,6 +100,7 @@ export interface Lead {
     };
     files: StoredFile[];
     report?: Report;
+    payment: Payment;
 }
 
 export interface LeadInput {

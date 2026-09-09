@@ -6,6 +6,8 @@ import { loadConfig } from './config';
 import { registerAdminRoutes } from './routes/admin';
 import { registerLeadRoutes } from './routes/leads';
 import { registerReportRoutes } from './routes/report';
+import { registerStripeRoutes } from './routes/stripe';
+import { PaymentGateway } from './payments';
 import { applySchema, createPool } from './db';
 import { ReportMailer } from './email';
 import { FileStorage } from './file-storage';
@@ -58,6 +60,7 @@ async function main(): Promise<void> {
     const files = new FileStorage(config);
     const slack = new SlackNotifier(config, app.log);
     const mailer = new ReportMailer(config, app.log);
+    const payments = new PaymentGateway(config, app.log);
 
     app.get('/health', async (_request, reply) => {
         try {
@@ -73,8 +76,9 @@ async function main(): Promise<void> {
     app.setNotFoundHandler((_request, reply) => {
         reply.code(404).send({ errors: [{ field: 'request', reason: 'not found' }] });
     });
-    registerLeadRoutes(app, { config, leads, files, slack });
+    registerLeadRoutes(app, { config, leads, files, slack, payments });
     registerReportRoutes(app, { config, leads, files, slack });
+    registerStripeRoutes(app, { leads, payments, slack });
     registerAdminRoutes(app, { config, leads, files, mailer });
 
     app.setErrorHandler((error: FastifyError, request, reply) => {
