@@ -1,0 +1,57 @@
+# Caddy terminates TLS (automatic Let's Encrypt) and proxies to the Fastify container.
+# DNS: api.raportcf.ro A -> the netcup box. Only port 443 is open: certificates are obtained and
+# renewed with the TLS-ALPN-01 challenge on 443, so port 80 stays closed at the firewall and is
+# not published by the compose. There is no HTTP -> HTTPS redirect as a result; nothing needs it.
+# The landing itself is on Bunny; this host serves only the API and the admin pages.
+
+{
+    # Do not bind or redirect on port 80.
+    auto_https disable_redirects
+}
+
+api.raportcf.ro {
+    tls {
+        issuer acme {
+            disable_http_challenge
+        }
+    }
+
+    encode gzip
+
+    # Larger than MAX_FILES_PER_REQUEST * MAX_FILE_BYTES so the service, not Caddy, produces the error.
+    request_body {
+        max_size 300MB
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # Admin pages: only from the allowed IP (ADMIN_ALLOWED_IP in .env), then basic auth.
+    # `route` keeps this order, so a foreign IP gets 403 without ever seeing a password prompt.
+    # Generate the hash with: docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
+    @admin path /admin/*
+    route @admin {
+        @foreign not remote_ip {$ADMIN_ALLOWED_IP:109.102.6.31}
+        respond @foreign "Forbidden" 403
+        basic_auth {
+            {$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+        }
+        reverse_proxy intake:3000 {
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    # Everything else (POST /leads, POST /leads/:id/files, /health) is public: the form on raportcf.ro calls it.
+    reverse_proxy intake:3000 {
+        header_up X-Forwarded-For {remote_host}
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

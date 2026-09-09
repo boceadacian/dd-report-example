@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LeadObjects",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::imobile-private-files/dd-experiment/*"
+    },
+    {
+      "Sid": "ListLeadPrefixOnly",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::imobile-private-files",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["dd-experiment/", "dd-experiment/*"]
+        }
+      }
+    }
+  ]
+}

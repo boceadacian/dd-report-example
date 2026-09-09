@@ -1,0 +1,14 @@
+# dependencies / build output
+node_modules/
+dist/
+
+# secrets — never commit (templates *.example are kept)
+.env
+*.env
+.admin-password
+.slack-webhook
+
+# editor / OS
+*.iml
+.idea/
+.DS_Store

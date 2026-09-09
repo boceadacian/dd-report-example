@@ -1,0 +1,14 @@
+{
+  "name": "dd-landing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static landing page for the DD report experiment. `npm run build` writes the upload-ready files to dist/.",
+  "scripts": {
+    "build": "node build.mjs",
+    "deploy": "node build.mjs && node --env-file=.bunny.env deploy-bunny.mjs"
+  },
+  "devDependencies": {
+    "lightningcss": "^1.28.2",
+    "terser": "^5.36.0"
+  }
+}

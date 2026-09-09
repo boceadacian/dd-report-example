@@ -1,0 +1,51 @@
+# Production on the netcup box: Caddy terminates TLS for api.raportcf.ro and proxies to the service.
+# Secrets and the admin credentials come from ./.env (copy .env.example, chmod 600, never commit).
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+services:
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      # 443 only: TLS-ALPN-01 needs no port 80 (see deploy/Caddyfile).
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      ADMIN_ALLOWED_IP: ${ADMIN_ALLOWED_IP:-109.102.6.31}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account. Losing this volume re-issues certificates and hits the Let's Encrypt rate limit.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - intake
+
+  intake:
+    build: ./intake
+    image: dd-intake:latest
+    restart: always
+    env_file: .env
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "3000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  caddy_data:
+  caddy_config:

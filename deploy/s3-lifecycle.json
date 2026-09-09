@@ -1,0 +1,17 @@
+{
+  "Rules": [
+    {
+      "ID": "Expire temporary objects",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "temporary/" },
+      "Expiration": { "Days": 10 }
+    },
+    {
+      "ID": "dd-experiment-90-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "dd-experiment/" },
+      "Expiration": { "Days": 90 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 2 }
+    }
+  ]
+}

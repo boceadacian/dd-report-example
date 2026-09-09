@@ -1,0 +1,72 @@
+# Local end-to-end: landing on http://localhost:${LANDING_PORT}/, the API on
+# http://localhost:${API_PORT} (app.js defaults to 18081 on localhost; pass ?api=... to change it), MinIO instead of S3 (console on
+# http://localhost:${MINIO_CONSOLE_PORT}, minioadmin / minioadmin), an HTTP echo instead of Slack.
+# Defaults: LANDING_PORT=18080, API_PORT=18081, MINIO_PORT=19190, MINIO_CONSOLE_PORT=19191.
+# Override on the command line when one is taken: LANDING_PORT=28080 API_PORT=28081 docker compose ...
+# If API_PORT is not 18081, open the page once with ?api=http://localhost:<API_PORT>.
+#
+#   (cd landing && npm run build) && docker compose -f docker-compose.local.yml up --build
+#
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "${MINIO_PORT:-19190}:9000"
+      - "${MINIO_CONSOLE_PORT:-19191}:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do sleep 1; done;
+      mc mb -p local/imobile-private-files;
+      echo 'bucket ready'"
+
+  # Prints every webhook call it receives; look at its logs to see the Slack messages.
+  slack-mock:
+    image: mendhak/http-https-echo:37
+    environment:
+      HTTP_PORT: 8080
+      ECHO_BACK_TO_CLIENT: "false"
+
+  intake:
+    build: ./intake
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 3000
+      PUBLIC_BASE_URL: http://localhost:${API_PORT:-18081}
+      # The compose landing, IntelliJ's built-in server (63342) and `npx serve` (3000) are all allowed to call the API.
+      ALLOWED_ORIGINS: http://localhost:${LANDING_PORT:-18080},http://127.0.0.1:${LANDING_PORT:-18080},http://localhost:63342,http://127.0.0.1:63342,http://localhost:3000
+      AWS_REGION: eu-central-1
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET: imobile-private-files
+      S3_PREFIX: dd-experiment
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_PORT:-19190}
+      SLACK_WEBHOOK_URL: http://slack-mock:8080/slack-webhook
+      LOG_LEVEL: debug
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - intake
+    ports:
+      - "${LANDING_PORT:-18080}:8080"
+      - "${API_PORT:-18081}:8081"
+    volumes:
+      - ./deploy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - ./landing/dist:/srv:ro
+
+volumes:
+  minio_data:

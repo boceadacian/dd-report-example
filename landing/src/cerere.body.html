@@ -1,0 +1,193 @@
+<main class="dd-main">
+<div class="dd-card" id="formular">
+    <div class="dd-stamp">Gratuit<small>în perioada de test</small></div>
+
+    <form id="lead-form" novalidate>
+        <h1 class="dd-title">Cere raportul de verificare</h1>
+        <p class="dd-hint">Ne trebuie extrasul de carte funciară, ca PDF sau fotografiat pagină cu pagină, sau numărul cadastral ca să îl obținem noi. Îți trimitem raportul pe email. Prețul de listă este 150 RON, în perioada de test raportul este gratuit.</p>
+
+        <div class="dd-form-error" id="lead-error" role="alert"></div>
+
+        <div class="dd-field">
+            <label>Tip de proprietate</label>
+            <div class="dd-seg">
+                <label><input type="radio" name="propertyType" value="apartment" checked><span>Apartament</span></label>
+                <label><input type="radio" name="propertyType" value="land"><span>Teren</span></label>
+            </div>
+        </div>
+
+        <div class="dd-row">
+            <div class="dd-field" data-field="email">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" autocomplete="email" required placeholder="nume@exemplu.ro">
+                <div class="dd-error">Adresă de email invalidă</div>
+            </div>
+            <div class="dd-field" data-field="phone">
+                <label for="phone">Telefon</label>
+                <input type="tel" id="phone" name="phone" autocomplete="tel" required placeholder="07xx xxx xxx">
+                <div class="dd-error">Număr de telefon invalid. Format: 07xx xxx xxx</div>
+            </div>
+        </div>
+
+        <div class="dd-fetch">
+            <span class="dd-fetch-text">Nu ai CF-ul? Îl obținem noi.</span>
+            <label class="dd-check">
+                <input type="checkbox" id="fetch-cf">
+                <span>Raport + serviciu de obținere CF inclus, gratuit în perioada de test</span>
+            </label>
+            <div class="dd-field" data-field="cadastralNumber" id="cadastral-block" hidden>
+                <label for="cadastralNumber">Număr cadastral</label>
+                <input type="text" id="cadastralNumber" name="cadastralNumber" placeholder="XXXXXX-CX-UX" maxlength="20" autocapitalize="characters" autocomplete="off">
+                <div class="dd-error">Format invalid. Se așteaptă: XXXXXX-CX-UX</div>
+            </div>
+            <a class="dd-guide-link" href="./#ghid-cf" target="_blank" rel="noopener">Cum obții CF-ul?</a>
+        </div>
+
+        <div id="upload-blocks">
+            <div class="dd-tips" id="photo-tips" hidden>
+                <span class="dd-tips-title">Pentru a ne ajuta să analizăm documentul cât mai precis, te rugăm să urmezi aceste recomandări când încarci fotografii în loc de un PDF:</span>
+                <ul>
+                    <li>Asigură-te că textul este clar, net și ușor de citit.</li>
+                    <li>Încarcă o fotografie pentru fiecare pagină a documentului.</li>
+                    <li>Încearcă să surprinzi o singură pagină completă per fotografie.</li>
+                    <li>Evită fotografiile care includ parte dintr-o pagină și parte din alta.</li>
+                    <li>Dacă documentul este deschis ca o carte, fotografiază paginile din stânga și din dreapta separat, nu împreună într-o singură imagine.</li>
+                    <li>Ține pagina centrată și asigură-te că fotografia conține cât mai mult posibil doar pagina documentului.</li>
+                    <li>Evită neclaritatea, reflexiile, umbrele, marginile tăiate sau fotografiile înclinate.</li>
+                </ul>
+            </div>
+
+            <div class="dd-doc-block" data-block="cf">
+                <div class="dd-doc-head">
+                    <div class="dd-doc-titles">
+                        <span class="dd-doc-title" id="cf-title">CF apartamentului</span>
+                        <span class="dd-doc-sub">Va fi folosit exclusiv pentru generarea raportului</span>
+                    </div>
+                    {{SEG:cf:PDF:Fotografie}}
+                </div>
+                <div class="dd-dropzone" data-drop="cf">
+                    <div class="dd-dropzone-content">
+                        <div class="dd-dropzone-icon"><img alt="" width="24" height="24" src="https://static.knoha.eu/static/svg/file-upload-success.svg"></div>
+                        <div class="dd-dropzone-text">
+                            <span class="dd-dropzone-heading">Trage și plasează fișierele aici.</span>
+                            <span class="dd-dropzone-sub" data-drop-desc="cf">Format compatibil: PDF.</span>
+                        </div>
+                    </div>
+                    <div class="dd-dropzone-button">{{BTN:secondary:browse-cf:button:Răsfoiește Fișiere:small}}</div>
+                </div>
+                <div class="dd-dropzone-mobile" data-drop-mobile="cf">{{BTN:secondary:browse-cf-mobile:button:Încarcă:medium:upload_cloud_green.svg}}</div>
+                <input type="file" data-file-input="cf" accept=".pdf,application/pdf" hidden>
+                <ul class="dd-files" data-file-list="cf"></ul>
+                <div class="dd-photo-grid" data-photo-grid="cf"></div>
+            </div>
+
+            <div class="dd-doc-block" data-block="parkingCf" id="parking-block">
+                <div class="dd-doc-head">
+                    <div class="dd-doc-titles">
+                        <span class="dd-doc-title">CF document parcare <span class="dd-optional">(opțional)</span></span>
+                        <span class="dd-doc-sub">Va fi folosit exclusiv pentru generarea raportului</span>
+                    </div>
+                    {{SEG:parkingCf:PDF:Fotografie}}
+                </div>
+                <div class="dd-dropzone" data-drop="parkingCf">
+                    <div class="dd-dropzone-content">
+                        <div class="dd-dropzone-icon"><img alt="" width="24" height="24" src="https://static.knoha.eu/static/svg/file-upload-success.svg"></div>
+                        <div class="dd-dropzone-text">
+                            <span class="dd-dropzone-heading">Trage și plasează fișierele aici.</span>
+                            <span class="dd-dropzone-sub" data-drop-desc="parkingCf">Format compatibil: PDF.</span>
+                        </div>
+                    </div>
+                    <div class="dd-dropzone-button">{{BTN:secondary:browse-parkingCf:button:Răsfoiește Fișiere:small}}</div>
+                </div>
+                <div class="dd-dropzone-mobile" data-drop-mobile="parkingCf">{{BTN:secondary:browse-parkingCf-mobile:button:Încarcă:medium:upload_cloud_green.svg}}</div>
+                <input type="file" data-file-input="parkingCf" accept=".pdf,application/pdf" hidden>
+                <ul class="dd-files" data-file-list="parkingCf"></ul>
+                <div class="dd-photo-grid" data-photo-grid="parkingCf"></div>
+            </div>
+
+            <div class="dd-doc-block" data-block="other">
+                <div class="dd-doc-head">
+                    <div class="dd-doc-titles">
+                        <span class="dd-doc-title">Alte documente <span class="dd-optional">(opțional)</span></span>
+                        <span class="dd-doc-sub">Contract, antecontract, plan, certificat energetic, adeverință de la asociație, orice crezi că ne ajută</span>
+                    </div>
+                </div>
+                <div class="dd-dropzone" data-drop="other">
+                    <div class="dd-dropzone-content">
+                        <div class="dd-dropzone-icon"><img alt="" width="24" height="24" src="https://static.knoha.eu/static/svg/file-upload-success.svg"></div>
+                        <div class="dd-dropzone-text">
+                            <span class="dd-dropzone-heading">Trage și plasează fișierele aici.</span>
+                            <span class="dd-dropzone-sub" data-drop-desc="other">Formate compatibile: PDF, JPG, PNG. Maximum 10 fișiere.</span>
+                        </div>
+                    </div>
+                    <div class="dd-dropzone-button">{{BTN:secondary:browse-other:button:Răsfoiește Fișiere:small}}</div>
+                </div>
+                <div class="dd-dropzone-mobile" data-drop-mobile="other">{{BTN:secondary:browse-other-mobile:button:Încarcă:medium:upload_cloud_green.svg}}</div>
+                <input type="file" data-file-input="other" accept=".pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png,image/heic" multiple hidden>
+                <ul class="dd-files" data-file-list="other"></ul>
+                <div class="dd-photo-grid" data-photo-grid="other"></div>
+            </div>
+        </div>
+
+        <div class="dd-honey" aria-hidden="true">
+            <label for="website">Website</label>
+            <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+
+        <div class="dd-consent-block">
+            <p class="dd-consent-desc">Selectând „Sunt de acord” mai jos, confirm că am citit și accept <a href="termeni.html" target="_blank">Termenii și Condițiile</a> precum și <a href="confidentialitate.html" target="_blank">Politica de Confidențialitate</a>. Ne dedicăm protejării informațiilor tale personale și le vom gestiona în conformitate cu legislația aplicabilă.</p>
+            <div class="dd-field" data-field="termsAccepted">
+                <label class="dd-consent">
+                    <input type="checkbox" id="termsAccepted" name="termsAccepted">
+                    <span>Sunt de acord cu Termenii și Condițiile &amp; Politica de Confidențialitate</span>
+                </label>
+                <div class="dd-error">Te rugăm să accepți Termenii și Condițiile &amp; Politica de Confidențialitate.</div>
+            </div>
+
+            <p class="dd-consent-desc">Pentru a genera raportul tău, documentele și detaliile proprietății pe care le furnizezi sunt analizate prin procesare automată, inclusiv sisteme de Inteligență Artificială. Datele tale sunt folosite exclusiv pentru generarea raportului și nu sunt niciodată vândute, partajate sau utilizate în alt scop. Află mai multe în <a href="nota-ai.html" target="_blank">Nota de informare și consimțământ privind utilizarea Inteligenței Artificiale</a>.</p>
+            <div class="dd-field" data-field="aiConsentAccepted">
+                <label class="dd-consent">
+                    <input type="checkbox" id="aiConsentAccepted" name="aiConsentAccepted">
+                    <span>Sunt de acord cu prelucrarea datelor mele cu caracter personal și utilizarea sistemelor de Inteligență Artificială</span>
+                </label>
+                <div class="dd-error">Te rugăm să accepți prelucrarea datelor tale cu caracter personal și utilizarea sistemelor de Inteligență Artificială.</div>
+            </div>
+        </div>
+
+        <div class="dd-actions dd-tooltip-host" id="submit-host">
+            {{BTN:primary:lead-submit:submit:Trimite cererea}}
+            <div class="dd-tooltip" id="submit-tooltip" role="tooltip" hidden>
+                <div class="dd-tooltip-bubble"><span class="dd-tooltip-text" id="submit-tooltip-text"></span></div>
+                <div class="dd-tooltip-arrow"></div>
+            </div>
+        </div>
+    </form>
+</div>
+<p class="dd-disclaimer">Acest raport are scop exclusiv informativ și nu constituie consultanță juridică, financiară sau tehnică. Recomandăm consultarea unui notar, avocat sau expert tehnic înainte de orice decizie de cumpărare.</p>
+</main>
+
+<!-- Progress modal: one row per request, like the request-progress modal in the app. -->
+<div class="dd-modal" id="progress-modal" hidden role="dialog" aria-modal="true" aria-labelledby="progress-title">
+    <div class="dd-modal-card">
+        <div class="dd-modal-head"><span id="progress-title">Trimitem cererea</span></div>
+        <div class="dd-modal-body">
+            <div class="dd-progress-row" data-step="lead">
+                <span class="dd-progress-label">Salvăm cererea</span>
+                <div class="dd-progress-status" data-status="idle">
+                    <a class="dd-progress-retry" href="#" hidden><img alt="" width="16" height="16" src="https://static.knoha.eu/static/svg/undo_red.svg">Reîncearcă</a>
+                    <span class="dd-progress-text"></span>
+                    <img class="dd-progress-icon" alt="" width="24" height="24" src="">
+                </div>
+            </div>
+            <div class="dd-progress-row" data-step="files" hidden>
+                <span class="dd-progress-label">Încărcăm documentele</span>
+                <div class="dd-progress-status" data-status="idle">
+                    <a class="dd-progress-retry" href="#" hidden><img alt="" width="16" height="16" src="https://static.knoha.eu/static/svg/undo_red.svg">Reîncearcă</a>
+                    <span class="dd-progress-text"></span>
+                    <img class="dd-progress-icon" alt="" width="24" height="24" src="">
+                </div>
+            </div>
+        </div>
+        <div class="dd-modal-actions">{{BTN:secondary:progress-close:button:Închide}}</div>
+    </div>
+</div>

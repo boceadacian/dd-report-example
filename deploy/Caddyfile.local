@@ -1,0 +1,26 @@
+# Local stand-in for the production Caddyfile: plain HTTP, two ports so the landing and the API
+# are different origins and CORS is exercised the way it is with Bunny + api.raportcf.ro.
+{
+    auto_https off
+}
+
+# The built landing (landing/dist) exactly as it would sit on Bunny.
+:8080 {
+    root * /srv
+    file_server
+}
+
+# The intake API. Admin pages use basic auth admin / admin.
+:8081 {
+    @admin path /admin/*
+    basic_auth @admin {
+        admin $2y$05$8SWo4XG6kAs66jkWW/nT1uaM2rTcLwGGiSvgo5m7X.c8Q27Fh6AsC
+    }
+    reverse_proxy intake:3000 {
+        header_up X-Forwarded-For {remote_host}
+    }
+    log {
+        output stdout
+        format console
+    }
+}
