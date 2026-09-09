@@ -52,6 +52,20 @@ export interface StoredFile {
     uploadedAt: string;
 }
 
+/** The finished report, uploaded from the admin page and stored in S3 next to the lead's files. */
+export interface Report {
+    key: string;
+    originalName: string;
+    size: number;
+    uploadedAt: string;
+    /** Secret in the customer's link; rotating it invalidates every link sent so far. */
+    token: string;
+    sentAt?: string;
+    sentCount: number;
+    viewedAt?: string;
+    viewCount: number;
+}
+
 export interface Lead {
     id: string;
     createdAt: string;
@@ -70,6 +84,7 @@ export interface Lead {
         acceptLanguage?: string;
     };
     files: StoredFile[];
+    report?: Report;
 }
 
 export interface LeadInput {

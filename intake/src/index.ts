@@ -5,8 +5,12 @@ import Fastify, { type FastifyError } from 'fastify';
 import { loadConfig } from './config';
 import { registerAdminRoutes } from './routes/admin';
 import { registerLeadRoutes } from './routes/leads';
+import { registerReportRoutes } from './routes/report';
+import { applySchema, createPool } from './db';
+import { ReportMailer } from './email';
+import { FileStorage } from './file-storage';
+import { LeadRepository } from './lead-repository';
 import { SlackNotifier } from './slack';
-import { LeadStorage } from './storage';
 
 async function main(): Promise<void> {
     const config = loadConfig();
@@ -23,7 +27,7 @@ async function main(): Promise<void> {
 
     await app.register(cors, {
         origin: config.allowedOrigins,
-        methods: ['POST', 'OPTIONS'],
+        methods: ['GET', 'POST', 'OPTIONS'],
         allowedHeaders: ['content-type'],
         maxAge: 3600
     });
@@ -38,22 +42,49 @@ async function main(): Promise<void> {
         }
     });
 
-    const storage = new LeadStorage(config);
-    const slack = new SlackNotifier(config, app.log);
+    // The admin forms post as application/x-www-form-urlencoded (field-less buttons and the multipart
+    // upload); without a parser for that type Fastify answers 415 before the handler runs.
+    app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
+        const fields: Record<string, string> = {};
+        for (const [key, value] of new URLSearchParams(body as string)) {
+            fields[key] = value;
+        }
+        done(null, fields);
+    });
 
-    app.get('/health', async () => ({ status: 'ok' }));
+    const pool = createPool(config);
+    await applySchema(pool);
+    const leads = new LeadRepository(pool);
+    const files = new FileStorage(config);
+    const slack = new SlackNotifier(config, app.log);
+    const mailer = new ReportMailer(config, app.log);
+
+    app.get('/health', async (_request, reply) => {
+        try {
+            await pool.query('SELECT 1');
+            return { status: 'ok' };
+        } catch (error) {
+            app.log.error({ err: error }, 'health check: database unreachable');
+            return reply.code(503).send({ status: 'database unreachable' });
+        }
+    });
 
     // Generic not-found body: don't echo the route or the framework's default shape.
     app.setNotFoundHandler((_request, reply) => {
         reply.code(404).send({ errors: [{ field: 'request', reason: 'not found' }] });
     });
-    registerLeadRoutes(app, { config, storage, slack });
-    registerAdminRoutes(app, { storage });
+    registerLeadRoutes(app, { config, leads, files, slack });
+    registerReportRoutes(app, { config, leads, files, slack });
+    registerAdminRoutes(app, { config, leads, files, mailer });
 
     app.setErrorHandler((error: FastifyError, request, reply) => {
         request.log.error({ err: error, url: request.url }, 'request failed');
         const status = typeof error.statusCode === 'number' && error.statusCode >= 400 ? error.statusCode : 500;
         reply.code(status).send({ errors: [{ field: 'request', reason: status === 500 ? 'internal error' : error.message }] });
+    });
+
+    app.addHook('onClose', async () => {
+        await pool.end();
     });
 
     await app.listen({ port: config.port, host: '0.0.0.0' });

@@ -2,22 +2,62 @@
 
 Demand test for the property due diligence report ("verificare proprietate").
 A static landing page on Bunny collects leads; a tiny Fastify service on the
-netcup box saves each lead and its CF documents to S3 and pings Slack; the
-report itself is produced by hand. Free of charge during the test.
+netcup box saves each lead to Postgres, its CF documents to S3 and pings Slack;
+the report itself is produced by hand, uploaded from the admin page and sent
+to the customer by email as a link. Free of charge during the test.
 
 ```
-landing/   static page for Bunny: index.html, multumim.html, confidentialitate.html, styles.css, app.js
-intake/    Fastify + TypeScript service: POST /leads, POST /leads/:id/files, GET /admin/leads[/:id], GET /health
-deploy/    Caddyfile (prod), Caddyfile.local, s3-iam-policy.json, s3-lifecycle.json
-docker-compose.prod.yml   Caddy + intake on the netcup box, reads ./.env (see .env.example)
+landing/   static page for Bunny: index.html, cerere.html, multumim.html, raport.html (customer's report), legal pages, styles.css, app.js
+intake/    Fastify + TypeScript service: POST /leads, POST /leads/:id/files, GET /raport/:id/:token,
+           GET /admin/leads[/:id], POST /admin/leads/:id/report[/send], GET /health
+deploy/    Caddyfile (prod), Caddyfile.local, s3-iam-policy.json (S3 + SES), s3-lifecycle.json
+docker-compose.prod.yml   Caddy + Postgres + intake on the netcup box, reads ./.env (see .env.example)
 docker-compose.local.yml  the same plus MinIO and a Slack echo, for testing on your machine
 ```
 
 Data flow: browser on `raportcf.ro` (Bunny) posts to `https://api.raportcf.ro` (netcup), the service
-writes `s3://imobile-private-files/dd-experiment/{leadId}/lead.json` and
-`.../files/NN-name.ext`, then posts a short message (no personal data) to a
-Slack webhook with a link to the basic-auth admin page. S3 is the system of
-record; there is no database and the box is disposable.
+inserts the lead into Postgres (`leads`), writes each document to
+`s3://imobile-private-files/dd-experiment/{leadId}/files/{kind}/NN-name.ext` (recorded in
+`lead_files`), then posts a short message (no personal data) to Slack with a link to the
+basic-auth admin page. When the report is done, you upload the PDF on the lead's admin page
+(stored at `.../{leadId}/report/raport.pdf`) and press "Trimite emailul": the customer gets
+`https://raportcf.ro/raport.html#{leadId}.{token}`, a static page on Bunny whose JS asks
+`GET api.raportcf.ro/raport/{leadId}/{token}/links` for 15 minute presigned S3 links (inline
+view + download) and embeds the PDF. The id and token travel in the URL fragment, so neither the
+CDN nor the API log them. The old `api.raportcf.ro/raport/{id}/{token}` URL 302s to the new
+page. The first open is pinged to Slack.
+
+## 0. Postgres
+
+The `postgres` service in the compose (`postgres:17-alpine`, volume `pg_data`, not published).
+Schema is applied by the intake at boot (`intake/src/db.ts`, idempotent). Tables: `leads`
+(one row per lead, `attribution` and `client` as jsonb, report columns: S3 key, link token,
+sent and viewed counters) and `lead_files` (one row per uploaded document, `s3_key` unique).
+Indexes on `created_at`, `lower(email)` and `phone`, so "has this person asked before" is one
+query when the free-then-paid gate is built.
+
+`PGPASSWORD` in `.env` is both the initial password of the container and the intake's
+credential. Changing it in `.env` after the volume exists does not change the database
+password; run `ALTER USER ddintake PASSWORD '...'` in psql first.
+
+```bash
+# psql on the box
+docker compose -f docker-compose.prod.yml exec postgres psql -U ddintake ddintake
+```
+
+**Importing the leads recorded before Postgres** (the `lead.json` objects of the S3-only
+version, left in place): idempotent, safe to re-run.
+```bash
+docker compose -f docker-compose.prod.yml run --rm intake node dist/tools/import-from-s3.js
+```
+
+**Backups.** The box is no longer disposable: the leads live in `pg_data`. Until a scheduled dump
+exists, run one by hand after each batch of leads and keep it outside the box:
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U ddintake -Fc ddintake > ddintake-$(date +%F).dump
+aws s3 cp ddintake-$(date +%F).dump s3://imobile-private-files/dd-experiment/backups/
+```
+Restore with `pg_restore -U ddintake -d ddintake --clean` inside the container.
 
 ## 1. S3 (existing bucket, new prefix)
 
@@ -26,8 +66,9 @@ Nothing in fileservice touches that prefix (it uses `temporary/`, `invoices/`
 and per-user folders, and deletes only keys it recorded in Scylla).
 
 1. **IAM user** `dd-intake` (created 2026-09-09), programmatic access only, with the inline
-   policy in `deploy/s3-iam-policy.json`: put and get under the prefix and listing of the prefix,
-   nothing else, no delete. Do not reuse fileservice's keys: the `.env` on a single VPS is the
+   policy in `deploy/s3-iam-policy.json`: put and get under the prefix, listing of the prefix,
+   and `ses:SendEmail` from `*@raportcf.ro` (see section 2b), nothing else, no delete.
+   Re-apply after editing: `aws iam put-user-policy --user-name dd-intake --policy-name dd-intake-s3 --policy-document file://deploy/s3-iam-policy.json`. Do not reuse fileservice's keys: the `.env` on a single VPS is the
    weakest point of this setup. To rotate the key:
    ```bash
    aws iam create-access-key --user-name dd-intake      # -> new AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
@@ -47,6 +88,26 @@ and per-user folders, and deletes only keys it recorded in Scylla).
 3. The bucket already encrypts by default (AES256, bucket key) and blocks all public access;
    objects are additionally written with `ServerSideEncryption: AES256`. No bucket CORS is
    needed, the browser never talks to S3 directly.
+
+## 2b. Email (SES)
+
+The report email is sent with the SES v2 API from `SES_FROM` (default `Raport CF <raport@raportcf.ro>`)
+using the `dd-intake` keys. One-time setup, all in `eu-central-1` (the platform's SES account, already
+out of the sandbox if production Keycloak mails users; check with `aws sesv2 get-account`):
+
+1. `aws sesv2 create-email-identity --email-identity raportcf.ro` and add the three DKIM CNAMEs it
+   returns to the Bunny DNS zone (864529). Wait for `aws sesv2 get-email-identity --email-identity raportcf.ro`
+   to show `DkimStatus: SUCCESS`.
+2. Bunny DNS: TXT `raportcf.ro` = `v=spf1 include:amazonses.com ~all` and TXT `_dmarc.raportcf.ro` =
+   `v=DMARC1; p=quarantine; rua=mailto:office@knoha.eu`. A new domain with no reputation lands in spam
+   without these.
+3. `SES_REPLY_TO` to a mailbox someone reads (the address in the email says "răspunde la acest email").
+   Nothing receives mail at `raport@raportcf.ro` unless you set up a mailbox or a forward.
+4. Re-apply the IAM policy (section 1).
+
+With `SES_FROM` empty (local compose) the intake logs the email instead of sending it and the admin
+page says so. Send failures are logged with the SES error name and shown on the admin page; the
+counters only move when SES accepted the message.
 
 ## 2. Slack
 
@@ -87,6 +148,9 @@ Environment variables (`.env.example` is the reference):
 | `AWS_REGION` | `eu-central-1` |
 | `S3_BUCKET`, `S3_PREFIX` | `imobile-private-files`, `dd-experiment` |
 | `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT` | empty on AWS; MinIO endpoints for the local compose |
+| `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | Postgres; only the password is a secret, it also seeds the container |
+| `SES_FROM`, `SES_REPLY_TO`, `SES_REGION` | report email; empty `SES_FROM` disables sending (logged instead) |
+| `REPORT_LINK_TTL_SECONDS`, `MAX_REPORT_BYTES` | lifetime of the S3 links inside the customer's report page (15 min); report PDF cap (40 MB) |
 | `SLACK_WEBHOOK_URL` | incoming webhook; if empty the service logs a warning and still saves the lead |
 | `PUBLIC_BASE_URL` | used in the Slack message for the admin link |
 | `ALLOWED_ORIGINS` | CORS allowlist, the landing page origins only |
@@ -174,7 +238,7 @@ defaults are denied, which is mandatory for Google Ads in the EEA). The
 conversion fires once on `multumim.html`, keyed by the lead id, so a refresh
 does not double count. `gclid`, `fbclid`, `_fbp`, `_fbc`, the utm parameters,
 the referrer and the hero variant are stored with each lead, so cost per lead
-per channel can be computed from `lead.json` alone even when the pixel is
+per channel can be computed from the `leads.attribution` column alone even when the pixel is
 blocked.
 
 Hero copy is the page's A/B/C test (`dd-landing-2026-08`), sticky per browser
@@ -185,13 +249,16 @@ the control and is what the prerendered HTML contains.
 
 Slack ping -> open the admin link -> download the files via the presigned
 links, or obtain the CF from the cadastral number when the lead asked for that -> produce the
-report -> reply to the lead from your mailbox. Nothing
-in the system tracks status; keep a sheet with lead id, date contacted,
-date delivered, and what they said about the report.
+report -> on the lead's admin page upload the PDF ("Încarcă raportul") -> "Trimite emailul cu
+linkul". The page shows the customer link, how many times the email was sent and when the link
+was last opened; the list page shows the same per lead (încărcat / trimis / văzut). A re-upload
+replaces the PDF and keeps the same link. The admin POSTs refuse cross-site requests
+(`Sec-Fetch-Site`), since the browser would otherwise attach the basic-auth credentials to a
+form posted from any other site.
 
 Export everything at the end of the test:
 ```bash
-aws s3 sync s3://imobile-private-files/dd-experiment/ ./leads-export/ --exclude '*' --include '*/lead.json'
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U ddintake ddintake -c "\copy (select * from leads order by created_at) to stdout csv header" > leads.csv
 ```
 
 ## 6. Legal
@@ -205,7 +272,8 @@ EU storage. Have it reviewed before spending on ads.
 `docker-compose.local.yml` runs the whole thing on your machine: the built landing behind
 Caddy on `http://localhost:18080/`, the intake API behind Caddy on
 `http://localhost:18081` (a different origin, so CORS is exercised like Bunny + api.raportcf.ro),
-MinIO instead of S3, and an HTTP echo container instead of Slack.
+Postgres for the leads (psql on `localhost:15432`, user and password `ddintake`), MinIO instead
+of S3, and an HTTP echo container instead of Slack. Emails are logged, not sent.
 
 ```bash
 cd landing && npm install && npm run build && cd ..

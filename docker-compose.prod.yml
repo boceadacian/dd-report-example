@@ -23,11 +23,36 @@ services:
     depends_on:
       - intake
 
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ddintake
+      POSTGRES_USER: ddintake
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+    volumes:
+      # The leads live here. Back it up (see README, "Backups"); losing this volume loses every lead.
+      - pg_data:/var/lib/postgresql/data
+    # Not published: only the compose network reaches it.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ddintake -d ddintake"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   intake:
     build: ./intake
     image: dd-intake:latest
     restart: always
     env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
@@ -49,3 +74,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  pg_data:

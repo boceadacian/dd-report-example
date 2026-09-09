@@ -34,6 +34,12 @@ export class SlackNotifier {
         await this.post(text, lead.id);
     }
 
+    /** First open of the customer's report link; a useful signal for the test and it carries no personal data. */
+    async reportViewed(lead: Lead): Promise<void> {
+        const text = `:eyes: Lead \`${lead.id}\`: raportul a fost deschis pentru prima dată. ${this.config.publicBaseUrl}/admin/leads/${lead.id}`;
+        await this.post(text, lead.id);
+    }
+
     private async post(text: string, leadId: string): Promise<void> {
         if (this.config.slackBotToken != null && this.config.slackChannel != null) {
             await this.postWithBot(text, leadId);

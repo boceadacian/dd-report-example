@@ -2,12 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../config';
 import { sanitizeFileName, sniffFileType } from '../files';
 import { FILE_KIND_RULES, fileKindForField, isValidLeadId, newLeadId, validateLeadInput, type FileKind, type Lead, type StoredFile } from '../lead';
-import type { LeadStorage } from '../storage';
+import type { FileStorage } from '../file-storage';
+import type { LeadRepository } from '../lead-repository';
 import type { SlackNotifier } from '../slack';
 
 interface LeadRouteDeps {
     config: AppConfig;
-    storage: LeadStorage;
+    leads: LeadRepository;
+    files: FileStorage;
     slack: SlackNotifier;
 }
 
@@ -17,7 +19,7 @@ interface RejectedFile {
 }
 
 export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): void {
-    const { config, storage, slack } = deps;
+    const { config, leads, files, slack } = deps;
 
     app.post('/leads', {
         config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
@@ -46,7 +48,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
             files: []
         };
 
-        await storage.saveLead(lead);
+        await leads.insert(lead);
         request.log.info({ leadId: lead.id, propertyType: lead.propertyType, fetchCf: lead.fetchCf }, 'lead saved');
         await slack.leadCreated(lead);
         return reply.code(201).send({ id: lead.id });
@@ -62,7 +64,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
         if (!request.isMultipart()) {
             return reply.code(400).send({ errors: [{ field: 'body', reason: 'multipart/form-data expected' }] });
         }
-        const lead = await storage.loadLead(leadId);
+        const lead = await leads.find(leadId);
         if (lead == null) {
             return reply.code(404).send({ errors: [{ field: 'id', reason: 'unknown lead' }] });
         }
@@ -101,8 +103,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
                 rejected.push({ name: originalName, reason: rule.accepts === 'pdf' ? 'a PDF is expected here' : 'a photo (JPEG, PNG or HEIC) is expected here' });
                 continue;
             }
-            const key = storage.fileKey(leadId, kind, nextIndex, originalName);
-            await storage.saveFile(key, buffer, sniffed.contentType, buffer.length);
+            const key = files.fileKey(leadId, kind, nextIndex, originalName);
+            await files.saveFile(key, buffer, sniffed.contentType, buffer.length);
             stored.push({
                 kind,
                 key,
@@ -115,8 +117,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
         }
 
         if (stored.length > 0) {
+            await leads.addFiles(leadId, stored);
             lead.files.push(...stored);
-            await storage.saveLead(lead);
             request.log.info({ leadId, added: stored.length, rejected: rejected.length }, 'files attached');
             await slack.filesAttached(lead, stored.length);
         }

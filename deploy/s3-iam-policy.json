@@ -17,6 +17,17 @@
           "s3:prefix": ["dd-experiment/", "dd-experiment/*"]
         }
       }
+    },
+    {
+      "Sid": "ReportEmailFromVerifiedDomain",
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": "arn:aws:ses:eu-central-1:*:identity/*",
+      "Condition": {
+        "StringLike": {
+          "ses:FromAddress": "*@raportcf.ro"
+        }
+      }
     }
   ]
 }

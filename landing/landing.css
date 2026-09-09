@@ -558,3 +558,18 @@
 
 /* Hero image is a square 640x640 source shown in a non-square box on mobile; cover, don't stretch. */
 img.right-image { object-fit: cover !important; }
+
+/* Report page: card with the actions, the PDF embedded below it on desktop. */
+.dd-report-main { display: flex; flex-direction: column; gap: var(--spacing-16); }
+.dd-report p { color: var(--text-weak); line-height: 1.6; margin: 0 0 var(--spacing-12); }
+.dd-report-actions { display: flex; gap: var(--spacing-12); flex-wrap: wrap; }
+.dd-report-actions app-button { display: inline-block; }
+.dd-report-actions .button { width: auto; }
+.dd-report-note { font-size: 0.9rem; }
+.dd-report-frame { width: 100%; min-height: 75vh; border: 1px solid var(--stroke-weak, #0000001f); border-radius: var(--corner-radius-8); background: #fff; }
+.dd-report-frame[hidden] { display: none !important; }
+.dd-report-actions[hidden], .dd-report-note[hidden] { display: none !important; }
+@media (max-width: 720px) {
+    .dd-report-frame { display: none !important; }
+    .dd-report-actions .button { width: 100%; }
+}

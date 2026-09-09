@@ -37,14 +37,36 @@ services:
       HTTP_PORT: 8080
       ECHO_BACK_TO_CLIENT: "false"
 
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ddintake
+      POSTGRES_USER: ddintake
+      POSTGRES_PASSWORD: ddintake
+    ports:
+      # psql -h localhost -p 15432 -U ddintake ddintake  (password ddintake)
+      - "${PG_PORT:-15432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ddintake -d ddintake"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   intake:
     build: ./intake
     depends_on:
       minio-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     environment:
       PORT: 3000
+      PGHOST: postgres
+      PGPASSWORD: ddintake
       PUBLIC_BASE_URL: http://localhost:${API_PORT:-18081}
+      LANDING_BASE_URL: http://localhost:${LANDING_PORT:-18080}
       # The compose landing, IntelliJ's built-in server (63342) and `npx serve` (3000) are all allowed to call the API.
       ALLOWED_ORIGINS: http://localhost:${LANDING_PORT:-18080},http://127.0.0.1:${LANDING_PORT:-18080},http://localhost:63342,http://127.0.0.1:63342,http://localhost:3000
       AWS_REGION: eu-central-1
@@ -70,3 +92,4 @@ services:
 
 volumes:
   minio_data:
+  pg_data:

@@ -4,7 +4,7 @@ import { minify } from 'terser';
 
 // Output layout mirrors the public URL: the landing is the root of raportcf.ro.
 const OUT = 'dist';
-const HTML = ['index.html', 'cerere.html', 'multumim.html', 'confidentialitate.html', 'termeni.html', 'nota-ai.html'];
+const HTML = ['index.html', 'cerere.html', 'multumim.html', 'raport.html', 'confidentialitate.html', 'termeni.html', 'nota-ai.html'];
 const CSS = ['styles.css', 'landing.css'];
 const ASSETS = ['favicon.svg', 'apple-touch-icon.png'];
 const LINKS = '<link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="landing.css">';

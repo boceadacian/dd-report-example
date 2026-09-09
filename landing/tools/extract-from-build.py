@@ -10,6 +10,7 @@ Outputs (next to this script's parent):
     index.html            the landing, Angular runtime stripped, buttons wired
     cerere.html           the lead form, same header + styles
     multumim.html         thank-you page
+    raport.html           the customer's report page (id + token in the URL fragment, links from the API)
     confidentialitate.html privacy policy
     styles.css            the global stylesheet from the build
 """
@@ -285,6 +286,8 @@ def secondary_page(title: str, description: str, template: str, body_attr: str =
     'cerere.body.html'), encoding='utf-8')
 (LANDING / 'multumim.html').write_text(secondary_page(
     'Cerere primită | raportcf.ro', 'Am primit cererea ta.', 'multumim.body.html', ' data-page="thanks"'), encoding='utf-8')
+(LANDING / 'raport.html').write_text(secondary_page(
+    'Raportul tău | raportcf.ro', 'Raportul tău de verificare a proprietății.', 'raport.body.html', ' data-page="report"'), encoding='utf-8')
 (LANDING / 'confidentialitate.html').write_text(secondary_page(
     'Politica de confidențialitate | raportcf.ro', 'Cum prelucrăm datele trimise prin formularul de verificare a proprietății.',
     'confidentialitate.body.html'), encoding='utf-8')

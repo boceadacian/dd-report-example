@@ -946,6 +946,73 @@
         }
     }
 
+    // ---- Report page: raport.html#<leadId>.<token>; the fragment never reaches a server log ----
+    function initReport() {
+        if (document.body.getAttribute('data-page') !== 'report') {
+            return;
+        }
+        var status = document.getElementById('report-status');
+        var actions = document.getElementById('report-actions');
+        var note = document.getElementById('report-note');
+        var frame = document.getElementById('report-frame');
+        var openButton = document.getElementById('report-open');
+        var downloadButton = document.getElementById('report-download');
+        var match = /^([0-9a-z]{8,32})\.([A-Za-z0-9_-]{16,64})$/.exec(window.location.hash.replace(/^#/, ''));
+
+        function showError(message) {
+            status.textContent = message;
+            actions.hidden = true;
+            note.hidden = true;
+            frame.hidden = true;
+        }
+
+        if (match == null) {
+            showError('Linkul nu este valid. Deschide exact linkul din email; dacă problema persistă, răspunde la emailul primit.');
+            return;
+        }
+
+        var links = null;
+        function load() {
+            fetch(API_BASE + '/raport/' + encodeURIComponent(match[1]) + '/' + encodeURIComponent(match[2]) + '/links', {
+                headers: { accept: 'application/json' }
+            }).then(function (response) {
+                if (!response.ok) {
+                    throw new Error(String(response.status));
+                }
+                return response.json();
+            }).then(function (data) {
+                links = data;
+                status.textContent = 'Raportul este gata. Îl poți descărca sau deschide într-o fereastră nouă.';
+                actions.hidden = false;
+                var minutes = Math.round((data.expiresInSeconds || 900) / 60);
+                note.textContent = 'Butoanele funcționează ' + minutes + ' minute de la deschiderea paginii; dacă au expirat, reîncarcă pagina. Linkul din email rămâne valabil.';
+                note.hidden = false;
+                frame.src = data.view;
+                frame.hidden = false;
+            }).catch(function (error) {
+                showError(error.message === '404'
+                    ? 'Raportul nu a fost găsit. Linkul nu este valid sau raportul nu a fost încă publicat.'
+                    : 'Nu am putut încărca raportul. Reîncearcă în câteva momente.');
+            });
+        }
+
+        if (openButton != null) {
+            openButton.addEventListener('click', function () {
+                if (links != null) {
+                    window.open(links.view, '_blank', 'noopener');
+                }
+            });
+        }
+        if (downloadButton != null) {
+            downloadButton.addEventListener('click', function () {
+                if (links != null) {
+                    window.location.href = links.download;
+                }
+            });
+        }
+        load();
+    }
+
     captureAttribution();
     applyVariant();
     initLandingActions();
@@ -954,4 +1021,5 @@
     initConsent();
     initRequestForm();
     initThanks();
+    initReport();
 })();
