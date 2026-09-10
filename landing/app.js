@@ -39,24 +39,12 @@
     var CLARITY_ID = 'yfm5ue7y4a';               // e.g. 'abcd1234ef' (Microsoft Clarity project id)
 
     var ATTR_KEY = 'dd_attr';
-    var VARIANT_KEY = 'dd_variant';
     var CONSENT_KEY = 'dd_consent';
     var LEAD_KEY = 'dd_lead';
 
-    var VARIANTS = {
-        a: {
-            h1: 'Verificare proprietate înainte de cumpărare',
-            sub: 'Verifică proprietatea înainte să o cumperi. Primești un raport detaliat care evidențiază posibile riscuri, neconcordanțe și aspecte de verificat înainte să te angajezi, ca să poți negocia mai bine sau să te retragi din timp.'
-        },
-        b: {
-            h1: 'O problemă ascunsă te poate costa zeci de mii de euro',
-            sub: 'Raportul verifică sarcinile, ipotecile, datoriile și litigiile asociate proprietății, ca să nu preiei problemele altcuiva.'
-        },
-        c: {
-            h1: 'Află exact ce cumperi, fără drumuri și fără surprize',
-            sub: 'Ne spui ce proprietate te interesează, verificăm cartea funciară și actele, iar tu decizi în cunoștință de cauză.'
-        }
-    };
+    // Hero copy is the approved text in the HTML; the A/B swap was disabled on 2026-09-10. The id is
+    // still recorded on leads and in Clarity so existing reports keep their column.
+    var LANDING_VARIANT = 'a';
 
     function readStore(store, key) {
         try {
@@ -129,32 +117,8 @@
         return attribution;
     }
 
-    // ---- Hero A/B variant, sticky per browser ----
     function pickVariant() {
-        var forced = new URLSearchParams(window.location.search).get('v');
-        if (forced != null && VARIANTS[forced] != null) {
-            writeStore(localStorage, VARIANT_KEY, forced);
-            return forced;
-        }
-        var stored = readStore(localStorage, VARIANT_KEY);
-        if (stored != null && VARIANTS[stored] != null) {
-            return stored;
-        }
-        var keys = Object.keys(VARIANTS);
-        var chosen = keys[Math.floor(Math.random() * keys.length)];
-        writeStore(localStorage, VARIANT_KEY, chosen);
-        return chosen;
-    }
-
-    function applyVariant() {
-        var h1 = document.querySelector('[data-variant-h1]');
-        var sub = document.querySelector('[data-variant-sub]');
-        if (h1 == null || sub == null) {
-            return;
-        }
-        var variant = VARIANTS[pickVariant()];
-        h1.textContent = variant.h1;
-        sub.textContent = variant.sub;
+        return LANDING_VARIANT;
     }
 
     // ---- Consent + tags ----
@@ -1131,7 +1095,6 @@
     }
 
     captureAttribution();
-    applyVariant();
     initLandingActions();
     initAccordions();
     initGuideToggle();

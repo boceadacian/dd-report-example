@@ -1,4 +1,5 @@
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { transform } from 'lightningcss';
 import { minify } from 'terser';
 
@@ -22,6 +23,12 @@ if (js.code == null) {
     throw new Error('terser produced no output');
 }
 await writeFile(`${OUT}/app.js`, js.code);
+// Bunny serves app.js with a 30-day browser cache. The pages reference it with a content hash so a
+// deploy that changes the script (the hero variants live there) is picked up on the next page load
+// instead of after a hard refresh.
+const SCRIPT_TAG = '<script src="app.js" defer></script>';
+const scriptHash = createHash('sha256').update(js.code).digest('hex').slice(0, 10);
+const hashedScriptTag = `<script src="app.js?v=${scriptHash}" defer></script>`;
 
 // Minify both stylesheets and inline them into every page: two small render-blocking CSS
 // requests off the critical path (the styles.css -> landing.css chain Lighthouse flags) become
@@ -41,11 +48,14 @@ for (const file of HTML) {
     if (!html.includes(LINKS)) {
         throw new Error(`stylesheet links not found in ${file}; extractor output changed`);
     }
-    await writeFile(`${OUT}/${file}`, html.replace(LINKS, styleTag));
+    if (!html.includes(SCRIPT_TAG)) {
+        throw new Error(`app.js script tag not found in ${file}; extractor output changed`);
+    }
+    await writeFile(`${OUT}/${file}`, html.replace(LINKS, styleTag).replace(SCRIPT_TAG, hashedScriptTag));
 }
 
 for (const file of ASSETS) {
     await copyFile(file, `${OUT}/${file}`);
 }
 
-console.log(`app.js ${source.length} -> ${js.code.length}; css inlined (${cssSizes.join(', ')}); ${HTML.length} html + ${ASSETS.length} icons -> ${OUT}/`);
+console.log(`app.js ${source.length} -> ${js.code.length} (v=${scriptHash}); css inlined (${cssSizes.join(', ')}); ${HTML.length} html + ${ASSETS.length} icons -> ${OUT}/`);

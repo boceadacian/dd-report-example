@@ -459,6 +459,12 @@
 .dd-modal-actions { padding: 0 var(--spacing-24) var(--spacing-24); display: flex; justify-content: flex-end; }
 .dd-modal-actions app-button { display: block; }
 
+/* "Probleme pe care te ajutăm să le eviți": the tagline sits beside the icon, the pill under the text is gone. */
+.dd-problem-tag { display: flex; align-items: center; gap: var(--spacing-12); }
+.dd-problem-tag-text { font-weight: var(--font-weight-strong); font-size: var(--small-text); line-height: 1.3; }
+.dd-problem-tag-error { color: var(--text-error); }
+.dd-problem-tag-warning { color: var(--text-warning); }
+
 /* CF guide popup on the request page: the landing's "Ai nevoie de Cartea Funciară" section, in place. */
 .dd-guide-modal .dd-modal-body { max-height: min(70vh, 640px); overflow-y: auto; }
 .dd-guide-intro { margin: 0; color: var(--text-weak); font-size: var(--small-text); line-height: 1.5; }
