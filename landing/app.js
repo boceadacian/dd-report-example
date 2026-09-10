@@ -41,6 +41,8 @@
     var ATTR_KEY = 'dd_attr';
     var CONSENT_KEY = 'dd_consent';
     var LEAD_KEY = 'dd_lead';
+    var PENDING_KEY = 'dd_pending';       // events and tags fired before the consent choice, flushed on accept
+    var PENDING_LIMIT = 50;
 
     // Hero copy is the approved text in the HTML; the A/B swap was disabled on 2026-09-10. The id is
     // still recorded on leads and in Clarity so existing reports keep their column.
@@ -161,6 +163,7 @@
             window.clarity('consent');
             window.clarity('set', 'variant', pickVariant());
         }
+        flushPending();
     }
 
     // Maps a blocking message to a short reason code, for the submit_blocked event.
@@ -179,6 +182,7 @@
     // both no-ops until a tag is loaded, i.e. only for visitors who accepted cookies.
     function track(name, data) {
         if (window.__ddTagsLoaded !== true) {
+            queuePending({ kind: 'event', name: name, data: data || {} });
             return;
         }
         if (window.clarity != null) {
@@ -187,6 +191,60 @@
         if (GA4_ID !== '') {
             gtag('event', name, data || {});
         }
+    }
+
+    // Clarity custom tags are what the session filters work on (events are only markers on the timeline).
+    function tag(key, value) {
+        if (window.__ddTagsLoaded !== true) {
+            queuePending({ kind: 'tag', key: key, value: String(value) });
+            return;
+        }
+        if (window.clarity != null) {
+            window.clarity('set', key, String(value));
+        }
+    }
+
+    // Before the visitor answers the cookie banner nothing may be sent, but a CTA click on the landing
+    // followed by "Accept" on the form page is still one visit: keep the events in sessionStorage and
+    // replay them once the tags load. A "Doar cele necesare" answer discards the queue.
+    function queuePending(entry) {
+        if (readStore(localStorage, CONSENT_KEY) === 'denied') {
+            return;
+        }
+        var pending = readStore(sessionStorage, PENDING_KEY);
+        if (!Array.isArray(pending)) {
+            pending = [];
+        }
+        if (pending.length >= PENDING_LIMIT) {
+            return;
+        }
+        pending.push(entry);
+        writeStore(sessionStorage, PENDING_KEY, pending);
+    }
+
+    function flushPending() {
+        var pending = readStore(sessionStorage, PENDING_KEY);
+        try {
+            sessionStorage.removeItem(PENDING_KEY);
+        } catch (e) {
+            // storage blocked
+        }
+        if (!Array.isArray(pending)) {
+            return;
+        }
+        pending.forEach(function (entry) {
+            if (entry.kind === 'tag') {
+                tag(entry.key, entry.value);
+            } else if (entry.kind === 'event') {
+                track(entry.name, entry.data);
+            }
+        });
+    }
+
+    // Short reason for a failed request, safe to put in an event name.
+    function failureCode(error) {
+        var message = error != null && typeof error.message === 'string' ? error.message : '';
+        return /^http_\d{3}$/.test(message) ? message : 'network';
     }
 
     function initConsent() {
@@ -221,6 +279,11 @@
         });
         document.getElementById('cookie-reject').addEventListener('click', function () {
             writeStore(localStorage, CONSENT_KEY, 'denied');
+            try {
+                sessionStorage.removeItem(PENDING_KEY);
+            } catch (e) {
+                // storage blocked
+            }
             banner.hidden = true;
         });
     }
@@ -256,6 +319,30 @@
         }
     }
 
+    // Clarity "page" tag: landing, request, thanks, report, or the legal page's file name.
+    function pageName() {
+        var declared = document.body.getAttribute('data-page');
+        if (declared != null) {
+            return declared;
+        }
+        if (document.getElementById('lead-form') != null) {
+            return 'request';
+        }
+        var file = window.location.pathname.replace(/^.*\//, '').replace(/\.html$/, '');
+        return file === '' || file === 'index' ? 'landing' : file;
+    }
+
+    // Which "Obține raportul" was clicked: the hero, the CF service card, or something else.
+    function ctaPosition(element) {
+        if (element.closest('app-due-diligence-hero') != null) {
+            return 'hero';
+        }
+        if (element.closest('app-due-diligence-guide-right') != null) {
+            return 'cf_card';
+        }
+        return 'other';
+    }
+
     function initLandingActions() {
         document.querySelectorAll('[data-action]').forEach(function (element) {
             element.addEventListener('click', function (event) {
@@ -263,6 +350,7 @@
                 if (action === 'request') {
                     event.preventDefault();
                     track('cta_request');
+                    track('cta_request_' + ctaPosition(element));
                     window.location.href = 'cerere.html' + window.location.search;
                 } else if (action === 'example') {
                     event.preventDefault();
@@ -282,11 +370,14 @@
     }
 
     function initAccordions() {
-        document.querySelectorAll('app-accordion .accordion-layout').forEach(function (layout) {
+        document.querySelectorAll('app-accordion .accordion-layout').forEach(function (layout, index) {
             layout.addEventListener('click', function () {
                 var wrapper = layout.querySelector('.message-wrapper');
                 var chevron = layout.querySelector('.chevron-icon');
                 var open = wrapper.classList.toggle('message-wrapper--expanded');
+                if (open) {
+                    track('faq_opened_' + (index + 1));
+                }
                 if (chevron != null) {
                     chevron.classList.toggle('chevron-rotated', open);
                 }
@@ -302,6 +393,7 @@
         controls.forEach(function (control) {
             control.addEventListener('click', function () {
                 var key = control.getAttribute('data-guide');
+                track('cf_guide_tab_' + key);
                 controls.forEach(function (other) {
                     var selected = other === control;
                     other.classList.toggle('item-container-selected', selected);
@@ -708,11 +800,13 @@
             body: JSON.stringify(progress.request)
         }).then(function (response) {
             return response.json().then(function (body) {
-                return { ok: response.ok, body: body };
+                return { ok: response.ok, status: response.status, body: body };
+            }, function () {
+                return { ok: false, status: response.status, body: {} };
             });
         }).then(function (result) {
             if (!result.ok || result.body.id == null) {
-                throw new Error('rejected');
+                throw new Error('http_' + result.status);
             }
             progress.leadId = result.body.id;
             progress.paymentRequired = result.body.paymentRequired === true;
@@ -731,7 +825,8 @@
             } else {
                 finishSequence();
             }
-        }).catch(function () {
+        }).catch(function (error) {
+            track('lead_failed_' + failureCode(error));
             setStep('lead', 'error', 'Nu am putut salva cererea. Verifică conexiunea și reîncearcă.');
             if (progress.filesBody != null) {
                 setStep('files', 'canceled');
@@ -756,6 +851,7 @@
                 }
                 track('files_uploaded', { count: stored.length });
                 if (stored.length === 0) {
+                    track('upload_rejected');
                     setStep('files', 'error', rejected.map(function (entry) { return entry.name + ': ' + entry.reason; }).join('; '));
                     setModalClosable(true);
                     return;
@@ -763,7 +859,8 @@
                 setStep('files', 'success');
                 finishSequence();
             })
-            .catch(function () {
+            .catch(function (error) {
+                track('upload_failed_' + failureCode(error));
                 setStep('files', 'error', 'Nu am putut încărca documentele. Reîncearcă.');
                 setModalClosable(true);
             });
@@ -812,7 +909,8 @@
                 progress.paymentRequired = false;
                 finishSequence();
             }
-        }).catch(function () {
+        }).catch(function (error) {
+            track('checkout_failed_' + failureCode(error));
             setStep('payment', 'error', 'Nu am putut deschide plata. Reîncearcă sau plătește din pagina următoare.');
             setModalClosable(true);
         });
@@ -885,8 +983,16 @@
             refreshSubmitState();
         });
 
+        var started = false;
+        form.addEventListener('input', function () {
+            if (!started) {
+                started = true;
+                track('form_started');
+            }
+        });
         form.querySelectorAll('input[name=propertyType]').forEach(function (radio) {
             radio.addEventListener('change', function () {
+                tag('property_type', radio.value);
                 configureDocStep(radio.value);
             });
         });
@@ -939,6 +1045,7 @@
             uploadBlocks.hidden = fetchCf.checked;
             showFormError('lead-error', '');
             track(fetchCf.checked ? 'fetch_cf_selected' : 'fetch_cf_deselected');
+            tag('fetch_cf', fetchCf.checked ? 'yes' : 'no');
             refreshSubmitState();
         });
         refreshSubmitState();
@@ -947,6 +1054,7 @@
             link.addEventListener('click', function (event) {
                 event.preventDefault();
                 var step = link.closest('[data-step]').getAttribute('data-step');
+                track('retry_' + step);
                 setModalClosable(false);
                 if (step === 'lead' || progress.leadId == null) {
                     runLeadStep();
@@ -1048,6 +1156,7 @@
         }
 
         if (match == null) {
+            track('report_link_invalid');
             showError('Linkul nu este valid. Deschide exact linkul din email; dacă problema persistă, răspunde la emailul primit.');
             return;
         }
@@ -1063,6 +1172,7 @@
                 return response.json();
             }).then(function (data) {
                 links = data;
+                track('report_viewed');
                 status.textContent = 'Raportul este gata. Îl poți descărca sau deschide într-o fereastră nouă.';
                 actions.hidden = false;
                 var minutes = Math.round((data.expiresInSeconds || 900) / 60);
@@ -1071,6 +1181,7 @@
                 frame.src = data.view;
                 frame.hidden = false;
             }).catch(function (error) {
+                track(error.message === '404' ? 'report_link_not_found' : 'report_load_failed');
                 showError(error.message === '404'
                     ? 'Raportul nu a fost găsit. Linkul nu este valid sau raportul nu a fost încă publicat.'
                     : 'Nu am putut încărca raportul. Reîncearcă în câteva momente.');
@@ -1080,6 +1191,7 @@
         if (openButton != null) {
             openButton.addEventListener('click', function () {
                 if (links != null) {
+                    track('report_opened_tab');
                     window.open(links.view, '_blank', 'noopener');
                 }
             });
@@ -1087,6 +1199,7 @@
         if (downloadButton != null) {
             downloadButton.addEventListener('click', function () {
                 if (links != null) {
+                    track('report_downloaded');
                     window.location.href = links.download;
                 }
             });
@@ -1095,6 +1208,7 @@
     }
 
     captureAttribution();
+    tag('page', pageName());
     initLandingActions();
     initAccordions();
     initGuideToggle();
