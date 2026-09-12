@@ -38,6 +38,12 @@ export interface AppConfig {
     maxFileBytes: number;
     maxFilesPerLead: number;
     maxFilesPerRequest: number;
+    /** Meta Conversions API; empty pixel id or token disables it (the pixel in the GTM container still runs). */
+    metaPixelId: string | undefined;
+    metaCapiToken: string | undefined;
+    /** Events Manager -> Test events code; set only while checking the integration, it keeps events out of reports. */
+    metaTestEventCode: string | undefined;
+    metaGraphVersion: string;
 }
 
 function required(name: string): string {
@@ -104,6 +110,10 @@ export function loadConfig(): AppConfig {
         stripeTaxRateId: process.env.STRIPE_TAX_RATE_ID?.trim() || undefined,
         maxFileBytes: Number(optional('MAX_FILE_BYTES', String(10 * 1024 * 1024))),
         maxFilesPerLead: Number(optional('MAX_FILES_PER_LEAD', '28')),
-        maxFilesPerRequest: Number(optional('MAX_FILES_PER_REQUEST', '28'))
+        maxFilesPerRequest: Number(optional('MAX_FILES_PER_REQUEST', '28')),
+        metaPixelId: process.env.META_PIXEL_ID?.trim() || undefined,
+        metaCapiToken: process.env.META_CAPI_TOKEN?.trim() || undefined,
+        metaTestEventCode: process.env.META_TEST_EVENT_CODE?.trim() || undefined,
+        metaGraphVersion: optional('META_GRAPH_VERSION', 'v23.0')
     };
 }

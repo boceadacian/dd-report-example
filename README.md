@@ -176,8 +176,9 @@ Environment variables (`.env.example` is the reference):
 | `SLACK_WEBHOOK_URL` | incoming webhook; if empty the service logs a warning and still saves the lead |
 | `PUBLIC_BASE_URL` | used in the Slack message for the admin link |
 | `ALLOWED_ORIGINS` | CORS allowlist, the landing page origins only |
-| `ADMIN_USER`, `ADMIN_PASSWORD_HASH`, `ADMIN_ALLOWED_IP` | Caddy basic auth and client IP allowlist for `/admin/*` (read by Caddy, not by the service) |
+| `ADMIN_USER`, `ADMIN_PASSWORD_HASH`, `ADMIN_ALLOWED_IP` | Caddy basic auth and client IP allowlist for `/admin/*` (read by Caddy, not by the service); `ADMIN_ALLOWED_IP` takes several space-separated IPs or CIDRs in one quoted value, and a change needs `docker compose up -d caddy` (container env, a Caddy reload does not see it) |
 | `PRESIGNED_URL_TTL_SECONDS` | download links on the admin page, max 7 days |
+| `META_PIXEL_ID`, `META_CAPI_TOKEN`, `META_TEST_EVENT_CODE`, `META_GRAPH_VERSION` | Meta Conversions API (section 4); pixel id or token empty = off; the test code keeps events out of reports and must be cleared after checking. Set on the box with `deploy/set-meta-capi.sh` (token read from the local `.env`), `--live` clears the test code |
 | `MAX_FILE_BYTES`, `MAX_FILES_PER_LEAD`, `MAX_FILES_PER_REQUEST` | upload caps; defaults 10 MB and 28 files, the original flow's limits plus 10 other documents |
 
 Caddy notes (`deploy/Caddyfile`):
@@ -243,25 +244,46 @@ stored under `files/<kind>/` with kind `cf`, `cfPhoto`, `parkingCf`, `parkingCfP
 `other`; the multipart field names are `cf`, `cfPhotos`, `parkingCf`, `parkingCfPhotos`,
 `otherDocuments`.
 
+The full account of the tracking setup (Google Ads actions and labels, the GTM container tag by
+tag, the code, Meta, testing, the problems met) is in `TRACKING.md`.
+
 Before going live edit the top of `landing/app.js`:
 - `API_BASE` if the intake host differs from `api.raportcf.ro`.
-- `GOOGLE_ADS_ID` and `GOOGLE_ADS_CONVERSION` (Ads -> Goals -> Conversions,
-  a "Lead" conversion of type website; the label comes from the tag snippet).
-- `META_PIXEL_ID`.
-- `CLARITY_ID` for Microsoft Clarity session recordings and heatmaps, loaded behind the same
-  consent as the ad tags. Custom events fired: `cta_request`, `example_report`,
-  `lead_validation_failed`, `lead_submitted`, `files_uploaded`, `upload_skipped`,
-  `lead_converted`; the hero variant is set as a Clarity custom tag, so recordings can be
-  filtered per variant.
-- `GA4_ID`, optional; it receives the same events.
+- `GTM_ID`, the Google Tag Manager container. Every ad tag lives in the container (Google Ads
+  conversion + conversion linker, Meta pixel, GA4 if wanted); the page only pushes dataLayer
+  messages. The container setup, tag by tag, is in `ANALYSIS/google-ads/tracking-setup.md`.
+- `CLARITY_ID` for Microsoft Clarity session recordings and heatmaps, loaded directly (not
+  through the container) behind the same consent. The hero variant and the lead id are set as
+  Clarity custom tags, so recordings can be filtered.
 
-Tags load only after the visitor accepts the cookie banner (Consent Mode v2
-defaults are denied, which is mandatory for Google Ads in the EEA). The
-conversion fires once on `multumim.html`, keyed by the lead id, so a refresh
-does not double count. `gclid`, `fbclid`, `_fbp`, `_fbc`, the utm parameters,
-the referrer and the hero variant are stored with each lead, so cost per lead
-per channel can be computed from the `leads.attribution` column alone even when the pixel is
-blocked.
+dataLayer messages, each `{ event: <name>, ...fields }`:
+- `lead_converted` with `lead_id` and `event_id` (= the lead id), once on `multumim.html`, keyed
+  by the lead id in `sessionStorage` so a refresh does not double count. This is the primary
+  Google Ads conversion (transaction id = `lead_id`) and the Meta `Lead` event (eventID =
+  `event_id`).
+- `payment_completed` with `lead_id`, `event_id` (= `<lead id>-paid`), `value` (RON, from the
+  `suma` parameter the intake appends to the Stripe success URL) and `currency`, once per lead:
+  a secondary Google Ads purchase conversion and the Meta `Purchase` event.
+- interaction events, also sent to Clarity as custom events: `cta_request` (+ `cta_request_<position>`),
+  `example_report`, `submit_blocked_<reason>`, `lead_submitted` (`property_type`, `fetch_cf`),
+  `payment_required`, `files_uploaded` (`count`), `upload_rejected`, `checkout_started`,
+  `payment_cancelled`, `lead_failed_<code>`, `upload_failed_<code>`, `ai_consent_<state>`.
+
+Tags load only after the visitor accepts the cookie banner: the Consent Mode v2 default (all
+denied) is inline in every page's `<head>`, the update to granted is pushed before the container
+script is loaded, and nothing is loaded at all on "Doar cele necesare". There is no `<noscript>`
+container iframe, it would bypass the banner. `gclid`, `fbclid`, `_fbp`, `_fbc`, the utm
+parameters, the referrer and the hero variant are stored with each lead, so cost per lead per
+channel can be computed from the `leads.attribution` column alone even when the pixel is blocked.
+
+The lead request also carries `marketingConsent` (the banner answer), stored in `leads.client`.
+When it is true and `META_PIXEL_ID` + `META_CAPI_TOKEN` are set, the intake sends the same `Lead`
+event (after the lead is saved) and `Purchase` event (from the Stripe webhook) to the Meta
+Conversions API with the same event ids as the pixel, so Meta deduplicates the two copies and
+still gets the event when the pixel is blocked. Email and phone go out as SHA-256 hashes only,
+with the client IP, user agent, `_fbp` and `_fbc`; failures are logged with Meta's status and
+error body (no personal data). `META_TEST_EVENT_CODE` routes events to the Test events tab in
+Events Manager while checking; clear it afterwards.
 
 Hero copy is the page's A/B/C test (`dd-landing-2026-08`), sticky per browser
 in `localStorage`; force a variant with `?v=b` when reviewing. Variant `a` is

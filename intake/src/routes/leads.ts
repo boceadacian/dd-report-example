@@ -4,6 +4,7 @@ import { sanitizeFileName, sniffFileType } from '../files';
 import { FILE_KIND_RULES, fileKindForField, isValidLeadId, newLeadId, validateLeadInput, type FileKind, type Lead, type StoredFile } from '../lead';
 import type { FileStorage } from '../file-storage';
 import type { LeadRepository } from '../lead-repository';
+import type { MetaConversionsApi } from '../meta-conversions';
 import type { PaymentGateway } from '../payments';
 import type { SlackNotifier } from '../slack';
 
@@ -13,6 +14,7 @@ interface LeadRouteDeps {
     files: FileStorage;
     slack: SlackNotifier;
     payments: PaymentGateway;
+    meta: MetaConversionsApi;
 }
 
 interface RejectedFile {
@@ -21,7 +23,7 @@ interface RejectedFile {
 }
 
 export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): void {
-    const { config, leads, files, slack, payments } = deps;
+    const { config, leads, files, slack, payments, meta } = deps;
 
     app.post('/leads', {
         config: { rateLimit: { max: 10, timeWindow: '1 minute' } }
@@ -37,17 +39,19 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
 
         // The first report is free; a person who already asked once (same email or phone) pays for the next.
         const previousLeadId = payments.enabled() ? await leads.findPreviousLeadId(input.email, input.phone) : undefined;
+        const { marketingConsent, ...fields } = input;
         const lead: Lead = {
             id: newLeadId(),
             createdAt: new Date().toISOString(),
-            ...input,
+            ...fields,
             attribution: input.attribution ?? {},
             termsAccepted: true,
             aiConsentAccepted: true,
             client: {
                 ip: request.ip,
                 userAgent: request.headers['user-agent']?.slice(0, 300),
-                acceptLanguage: request.headers['accept-language']?.slice(0, 100)
+                acceptLanguage: request.headers['accept-language']?.slice(0, 100),
+                marketingConsent
             },
             files: [],
             payment: { required: previousLeadId != null, previousLeadId }
@@ -56,6 +60,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
         await leads.insert(lead);
         request.log.info({ leadId: lead.id, propertyType: lead.propertyType, fetchCf: lead.fetchCf, paymentRequired: lead.payment.required }, 'lead saved');
         await slack.leadCreated(lead);
+        await meta.leadCreated(lead);
         return reply.code(201).send({ id: lead.id, paymentRequired: lead.payment.required, priceRon: config.reportPriceRon });
     });
 

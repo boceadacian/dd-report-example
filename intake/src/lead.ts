@@ -97,6 +97,8 @@ export interface Lead {
         ip: string;
         userAgent?: string;
         acceptLanguage?: string;
+        /** The visitor accepted the measurement cookies; gates the server-side Meta event. */
+        marketingConsent?: boolean;
     };
     files: StoredFile[];
     report?: Report;
@@ -111,6 +113,7 @@ export interface LeadInput {
     fetchCf: boolean;
     termsAccepted: boolean;
     aiConsentAccepted: boolean;
+    marketingConsent: boolean;
     attribution?: Attribution;
     website?: string;
 }
@@ -217,6 +220,7 @@ export function validateLeadInput(body: unknown): { lead?: LeadInput; failures: 
             fetchCf: cadastralNumber != null,
             termsAccepted: true,
             aiConsentAccepted: true,
+            marketingConsent: raw.marketingConsent === true,
             attribution: cleanAttribution(raw.attribution)
         }
     };

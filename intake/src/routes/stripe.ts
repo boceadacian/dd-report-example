@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { LeadRepository } from '../lead-repository';
+import type { MetaConversionsApi } from '../meta-conversions';
 import type { PaymentGateway } from '../payments';
 import type { SlackNotifier } from '../slack';
 
@@ -7,6 +8,7 @@ interface StripeRouteDeps {
     leads: LeadRepository;
     payments: PaymentGateway;
     slack: SlackNotifier;
+    meta: MetaConversionsApi;
 }
 
 /**
@@ -16,7 +18,7 @@ interface StripeRouteDeps {
  * lead is unknown (logged, nothing to retry).
  */
 export function registerStripeRoutes(app: FastifyInstance, deps: StripeRouteDeps): void {
-    const { leads, payments, slack } = deps;
+    const { leads, payments, slack, meta } = deps;
 
     app.register(async scope => {
         scope.removeContentTypeParser('application/json');
@@ -53,6 +55,7 @@ export function registerStripeRoutes(app: FastifyInstance, deps: StripeRouteDeps
             const lead = await leads.find(paid.leadId);
             if (lead != null) {
                 await slack.leadPaid(lead);
+                await meta.leadPaid(lead);
             }
             return reply.send({ received: true });
         });

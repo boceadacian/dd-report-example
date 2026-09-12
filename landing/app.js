@@ -32,11 +32,13 @@
         }
         return LOCAL_API_BASE;
     }
-    var GOOGLE_ADS_ID = '';            // e.g. 'AW-1234567890'
-    var GOOGLE_ADS_CONVERSION = '';    // e.g. 'AW-1234567890/AbC-D_efG-h12_34-567'
-    var GA4_ID = '';                   // e.g. 'G-XXXXXXX' (optional)
-    var META_PIXEL_ID = '';            // e.g. '123456789012345'
-    var CLARITY_ID = 'yfm5ue7y4a';               // e.g. 'abcd1234ef' (Microsoft Clarity project id)
+    // Google Tag Manager container. Every ad tag (Google Ads conversion + linker, Meta pixel, GA4 if
+    // wanted) is configured inside the container; this script only pushes events to the dataLayer.
+    // The tag names and the events they listen to are documented in ANALYSIS/google-ads/tracking-setup.md.
+    var GTM_ID = 'GTM-T66H6C4R';       // tagmanager.google.com, account Knoha, container raportcf.ro
+    // Microsoft Clarity stays loaded directly: it was live before the container existed and its
+    // custom tags (variant, lead id) are set from here.
+    var CLARITY_ID = 'yfm5ue7y4a';     // e.g. 'abcd1234ef' (Microsoft Clarity project id)
 
     var ATTR_KEY = 'dd_attr';
     var CONSENT_KEY = 'dd_consent';
@@ -136,26 +138,16 @@
             return;
         }
         window.__ddTagsLoaded = true;
+        // The consent default (all denied) is inline in every page's <head>; this update is pushed to the
+        // dataLayer before the container loads, so the Google tags inside it start in the granted state.
         gtag('consent', 'update', {
             ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted', analytics_storage: 'granted'
         });
-        var primary = GOOGLE_ADS_ID || GA4_ID;
-        if (primary !== '') {
-            loadScript('https://www.googletagmanager.com/gtag/js?id=' + primary);
-            gtag('js', new Date());
-            if (GOOGLE_ADS_ID !== '') {
-                gtag('config', GOOGLE_ADS_ID);
-            }
-            if (GA4_ID !== '') {
-                gtag('config', GA4_ID);
-            }
-        }
-        if (META_PIXEL_ID !== '' && window.fbq == null) {
-            /* eslint-disable */
-            !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-            /* eslint-enable */
-            window.fbq('init', META_PIXEL_ID);
-            window.fbq('track', 'PageView');
+        if (GTM_ID !== '') {
+            // The standard GTM snippet, minus the inline function: the container is loaded only after the
+            // visitor accepted, so there is no <noscript> iframe either (it would bypass the banner).
+            window.dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+            loadScript('https://www.googletagmanager.com/gtm.js?id=' + GTM_ID);
         }
         if (CLARITY_ID !== '' && window.clarity == null) {
             window.clarity = function () { (window.clarity.q = window.clarity.q || []).push(arguments); };
@@ -178,19 +170,51 @@
         return 'unknown';
     }
 
-    // Interaction events: Clarity custom events (name only) plus GA4 events (name + params),
-    // both no-ops until a tag is loaded, i.e. only for visitors who accepted cookies.
-    function track(name, data) {
+    // One dataLayer message per event: { event: name, ...data }. GTM triggers match on `event`, the
+    // other keys are read with Data Layer Variables (lead_id, event_id, value, currency, property_type).
+    // `done`, when given, runs once the container has fired the event's tags (or after a short timeout
+    // when the container never answers, e.g. blocked), so a navigation can wait for a conversion hit.
+    function pushEvent(name, data, done) {
+        if (GTM_ID === '') {
+            if (done != null) {
+                done();
+            }
+            return;
+        }
+        var payload = { event: name };
+        Object.keys(data || {}).forEach(function (key) {
+            payload[key] = data[key];
+        });
+        if (done != null) {
+            var called = false;
+            var finish = function () {
+                if (!called) {
+                    called = true;
+                    done();
+                }
+            };
+            payload.eventCallback = finish;
+            payload.eventTimeout = 500;
+            window.setTimeout(finish, 700);
+        }
+        window.dataLayer.push(payload);
+    }
+
+    // Interaction events: Clarity custom events (name only) plus a dataLayer message for the container,
+    // both no-ops until the tags are loaded, i.e. only after cookie consent. `done` is called after
+    // the container handled the event (see pushEvent), or immediately when nothing is loaded.
+    function track(name, data, done) {
         if (window.__ddTagsLoaded !== true) {
             queuePending({ kind: 'event', name: name, data: data || {} });
+            if (done != null) {
+                done();
+            }
             return;
         }
         if (window.clarity != null) {
             window.clarity('event', name);
         }
-        if (GA4_ID !== '') {
-            gtag('event', name, data || {});
-        }
+        pushEvent(name, data, done);
     }
 
     // Clarity custom tags are what the session filters work on (events are only markers on the timeline).
@@ -288,19 +312,14 @@
         });
     }
 
+    // The lead conversion. In the container: Google Ads conversion (transaction id = lead_id, so Ads
+    // deduplicates too) and the Meta "Lead" pixel event with eventID = event_id, the same id the intake
+    // sends through the Conversions API, so Meta keeps one of the two.
     function fireConversion(leadId) {
         if (window.__ddTagsLoaded !== true) {
             return;
         }
-        if (GOOGLE_ADS_CONVERSION !== '') {
-            gtag('event', 'conversion', { send_to: GOOGLE_ADS_CONVERSION, transaction_id: leadId });
-        }
-        if (GA4_ID !== '') {
-            gtag('event', 'generate_lead', { lead_id: leadId });
-        }
-        if (window.fbq != null) {
-            window.fbq('track', 'Lead', {}, { eventID: leadId });
-        }
+        pushEvent('lead_converted', { lead_id: leadId, event_id: leadId });
         if (window.clarity != null) {
             window.clarity('event', 'lead_converted');
             window.clarity('identify', leadId);
@@ -349,9 +368,12 @@
                 var action = element.getAttribute('data-action');
                 if (action === 'request') {
                     event.preventDefault();
-                    track('cta_request');
+                    // `cta_request` is the primary Google Ads conversion: the navigation waits for the
+                    // container to fire its tag, otherwise the page unload would cut the hit short.
                     track('cta_request_' + ctaPosition(element));
-                    window.location.href = 'cerere.html' + window.location.search;
+                    track('cta_request', { cta_position: ctaPosition(element) }, function () {
+                        window.location.href = 'cerere.html' + window.location.search;
+                    });
                 } else if (action === 'example') {
                     event.preventDefault();
                     track('example_report');
@@ -707,7 +729,10 @@
             termsAccepted: data.get('termsAccepted') === 'on',
             aiConsentAccepted: data.get('aiConsentAccepted') === 'on',
             website: (data.get('website') || '').trim() || undefined,
-            attribution: currentAttribution()
+            attribution: currentAttribution(),
+            // Whether the visitor accepted measurement cookies; the intake sends the lead to the Meta
+            // Conversions API only when this is true.
+            marketingConsent: readStore(localStorage, CONSENT_KEY) === 'granted'
         };
         if (fetchCf) {
             request.cadastralNumber = (data.get('cadastralNumber') || '').toUpperCase().replace(/\s+/g, '');
@@ -1103,7 +1128,19 @@
         var payment = params.get('plata');
         if (payment === 'ok') {
             document.getElementById('payment-ok').hidden = false;
-            track('payment_completed', {});
+            // Purchase conversion for the paid (repeat) report, once per lead like the lead conversion below.
+            // event_id matches the intake's Conversions API purchase event; `suma` is appended to the
+            // Stripe success URL by the intake.
+            var paidKey = 'dd_paid_' + leadId;
+            if (leadId !== '' && readStore(sessionStorage, paidKey) == null) {
+                writeStore(sessionStorage, paidKey, true);
+                var paidRon = Number(params.get('suma'));
+                var purchase = { lead_id: leadId, event_id: leadId + '-paid', currency: 'RON' };
+                if (paidRon > 0) {
+                    purchase.value = paidRon;
+                }
+                track('payment_completed', purchase);
+            }
         } else if (payment === 'anulata' && leadId !== '') {
             var pending = document.getElementById('payment-pending');
             pending.hidden = false;

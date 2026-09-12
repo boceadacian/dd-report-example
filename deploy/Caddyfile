@@ -30,7 +30,8 @@ api.raportcf.ro {
         -Server
     }
 
-    # Admin pages: only from the allowed IP (ADMIN_ALLOWED_IP in .env), then basic auth.
+    # Admin pages: only from the allowed IPs (ADMIN_ALLOWED_IP in .env, space-separated IPs or CIDRs,
+    # quoted; Caddy expands the placeholder before tokenizing, so each one becomes a remote_ip range), then basic auth.
     # `route` keeps this order, so a foreign IP gets 403 without ever seeing a password prompt.
     # Generate the hash with: docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
     @admin path /admin/*

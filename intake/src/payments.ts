@@ -39,7 +39,8 @@ export class PaymentGateway {
         if (this.stripe == null) {
             throw new Error('Stripe is not configured');
         }
-        const successUrl = `${this.config.landingBaseUrl}/multumim.html?id=${lead.id}&plata=ok`;
+        // `suma` lets the thank-you page report the purchase value to the ad tags without another API call.
+        const successUrl = `${this.config.landingBaseUrl}/multumim.html?id=${lead.id}&plata=ok&suma=${this.config.reportPriceRon}`;
         const cancelUrl = `${this.config.landingBaseUrl}/multumim.html?id=${lead.id}&plata=anulata`;
         try {
             const session = await this.stripe.checkout.sessions.create({
